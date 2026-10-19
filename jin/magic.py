@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import re
 import subprocess
 import time
 from datetime import datetime
@@ -38,24 +39,75 @@ def screenshot() -> Path:
         return path
 
 
-def read_screen() -> str:
-    path = screenshot()
-    text = ""
-    try:
-        import winocr
-        from PIL import Image
-        import asyncio
+def _alt_tab() -> None:
+    """Switch to the previous window (usually the work app behind Jin)."""
+    from pynput.keyboard import Controller, Key
 
+    keyboard = Controller()
+    keyboard.press(Key.alt)
+    keyboard.press(Key.tab)
+    keyboard.release(Key.tab)
+    keyboard.release(Key.alt)
+    time.sleep(0.45)
+
+
+def _ocr_image(image) -> tuple[str, str]:
+    """Return (text, error). Tries Windows OCR in id then en."""
+    errors: list[str] = []
+    try:
+        from winocr import recognize_pil_sync
+    except Exception as exc:
+        return "", f"winocr belum terpasang ({exc})"
+
+    for lang in ("id", "en"):
+        try:
+            result = recognize_pil_sync(image, lang)
+            if isinstance(result, dict):
+                text = str(result.get("text") or "")
+            else:
+                text = getattr(result, "text", "") or str(result)
+            if text.strip():
+                return text.strip(), ""
+        except Exception as exc:
+            errors.append(f"{lang}: {exc}")
+    return "", "; ".join(errors) or "OCR kosong"
+
+
+def read_screen() -> str:
+    """Grab the work window (not Jin), OCR it, then return focus to Jin."""
+    from PIL import Image
+
+    from jin import smart
+
+    switched = False
+    path: Path | None = None
+    text = ""
+    err = ""
+    try:
+        if smart.last_app_title():
+            _alt_tab()
+            switched = True
+        path = screenshot()
         image = Image.open(path)
-        result = asyncio.run(winocr.recognize_pil(image))
-        text = getattr(result, "text", "") or str(result)
-    except Exception:
-        text = ""
-    if text.strip():
-        return f"Screenshot: {path}\nTulisan di layar:\n{text.strip()[:2500]}"
+        text, err = _ocr_image(image)
+    except Exception as exc:
+        err = str(exc)
+    finally:
+        if switched:
+            try:
+                _alt_tab()
+            except Exception:
+                pass
+
+    if path and text.strip():
+        smart.save_context({"result": text[:280], "topic": "isi layar"})
+        return f"Screenshot: {path}\nTulisan di layar:\n{text.strip()[:4000]}"
+    where = str(path) if path else "(gagal ambil screenshot)"
+    hint = f" ({err})" if err else ""
     return (
-        f"Layar sudah kuambil, {OWNER_CALL}. File: {path}\n"
-        "Huruf di layar belum kebaca (OCR opsional). Bisa kuceritakan dari screenshot itu kalau bos tempel teksnya."
+        f"Layar sudah kuambil, {OWNER_CALL}. File: {where}\n"
+        f"Huruf di layar belum kebaca{hint}. "
+        "Pasang `winocr` + Windows OCR (id/en), atau tempel teksnya ke clipboard lalu bilang 'ringkas'."
     )
 
 
@@ -76,6 +128,22 @@ _clip_last = ""
 def mark_clip_write() -> None:
     global _clip_ignore
     _clip_ignore = True
+
+
+_CODE_HINTS = re.compile(
+    r"</?[a-zA-Z][\w-]*(\s[^>]*)?>|\b(def|class|import|from|return|function|const|let|var|"
+    r"public|private|async|await)\b|[{};]\s*$|=>|\$\w+|^\s*(#include|<\?php|```)",
+    re.MULTILINE,
+)
+
+
+def looks_like_code(text: str) -> bool:
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines:
+        return False
+    hits = sum(1 for line in lines if _CODE_HINTS.search(line))
+    symbols = sum(text.count(ch) for ch in "{}<>;=()[]")
+    return hits >= max(1, len(lines) // 3) or symbols / max(len(text), 1) > 0.06
 
 
 def new_clipboard_text() -> str | None:

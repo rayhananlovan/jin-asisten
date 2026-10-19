@@ -13,7 +13,7 @@ from jin import db
 from jin.actions import windows_toast
 from jin.config import JIN_IMAGE, JIN_SPEAK, JIN_WAKE, MOOD_IMAGES, OWNER_CALL
 from jin.llm import reply
-from jin.magic import current_form, cycle_form, new_clipboard_text
+from jin.magic import current_form, cycle_form, looks_like_code, new_clipboard_text
 from jin.smart import code_shadow, save_context, start_window_watcher
 from jin.recorder import MicRecorder
 from jin.stt import transcribe
@@ -600,6 +600,10 @@ class JinApp(ctk.CTk):
 
     def _offer_clipboard(self, text: str) -> None:
         save_context({"clipboard": text[:2000], "result": text[:280], "topic": "clipboard"})
+        if looks_like_code(text):
+            lines = len([line for line in text.splitlines() if line.strip()])
+            self._log(f"[CLIP] kode disalin ({lines} baris)")
+            return
         self._pending = "clipboard"
         preview = text.replace("\n", " ")[:80]
         message = f"Bos copy teks: {preview}. Ringkas, terjemah, atau catat?"

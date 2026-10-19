@@ -424,7 +424,11 @@ def match_intent(text: str) -> tuple[str, dict] | None:
         lower,
     ):
         return "draft_commit", {"path": ""}
-    if re.fullmatch(r"(ringkas|rangkum)(\s+(ini|jendela|halaman|pdf|dokumen|clipboard))?", lower):
+    if re.match(
+        r"^(?:tolong\s+|coba\s+)?(?:ringkas(?:kan)?|rangkum(?:kan)?)"
+        r"(?:\s+(?:ini|jendela|halaman|pdf|dokumen|clipboard|layar|yang\s+terbuka))?$",
+        lower,
+    ):
         return "summarize_active", {}
     if re.fullmatch(r"terjemah(kan)?|translate", lower):
         return "translate_clip", {}
@@ -440,14 +444,45 @@ def match_intent(text: str) -> tuple[str, dict] | None:
         return "daily_radar", {}
     if re.match(r"^(jendela (apa|aktif)|lagi ngapain|kerjaan apa)\b", lower):
         return "laptop_context", {}
-    file_search = re.match(r"^(?:cari file|cari dokumen|cari di laptop)\s+(.+)$", raw, re.I)
+    if re.match(
+        r"^(?:tolong\s+|coba\s+)?(?:baca(?:in)?|lihat|ocr|bacakan)\s+"
+        r"(?:isi\s+)?(?:layar|screen)(?:\s+saya)?(?:\s+yang\s+(?:sedang\s+)?(?:dibuka|terbuka))?$",
+        lower,
+    ) or re.match(
+        r"^(?:tolong\s+|coba\s+)?(?:apa\s+(?:yang\s+)?(?:ada\s+)?di\s+layar|"
+        r"isi\s+layar(?:\s+saya)?|lihat\s+apa\s+yang\s+(?:aku|saya)\s+buka)$",
+        lower,
+    ):
+        return "read_screen", {}
+    if re.match(
+        r"^(?:tolong\s+|coba\s+)?(?:screenshot|jepret\s+layar|ambil\s+(?:screenshot|gambar\s+layar))",
+        lower,
+    ):
+        return "screenshot", {}
+    file_search = re.match(
+        r"^(?:tolong\s+|coba\s+)?(?:cari\s+(?:file|dokumen|berkas)|cari\s+di\s+laptop)\s+(.+)$",
+        raw,
+        re.I,
+    )
     if file_search:
         return "search_files", {"query": file_search.group(1).strip()}
-    read = re.match(r"^(?:baca file|buka file|isi file)\s+(.+)$", raw, re.I)
+    read = re.match(
+        r"^(?:tolong\s+|coba\s+)?"
+        r"(?:baca(?:in)?(?:\s+isi)?|buka|isi(?:\s+dari)?)\s+"
+        r"(?:file|dokumen|berkas)\s+(.+)$",
+        raw,
+        re.I,
+    )
     if read:
         return "read_file", {"path": read.group(1).strip()}
-    if re.match(r"^(baca layar|lihat layar|screenshot|jepret layar)", lower):
-        return "read_screen" if "baca" in lower or "lihat" in lower else "screenshot", {}
+    read_path = re.match(
+        r"^(?:tolong\s+|coba\s+)?baca(?:in)?\s+"
+        r"((?:[A-Za-z]:[\\/]|\\\\|~[\\/]|\.{1,2}[\\/]).+)$",
+        raw,
+        re.I,
+    )
+    if read_path:
+        return "read_file", {"path": read_path.group(1).strip()}
     if re.match(r"^(kunci laptop|lock laptop|kunci pc)\b", lower):
         return "lock_pc", {}
     if re.match(r"^volume\s+(naik|turun|mute|bisukan|besar|kecil)\b", lower):
@@ -494,13 +529,43 @@ def match_intent(text: str) -> tuple[str, dict] | None:
 
     vscode_open = re.match(
         r"^(?:tolong\s+)?(?:buka|jalankan)\s+(?:vs\s*code|visual\s+studio\s+code|code)"
-        r"(?:\s+(?:di|folder|project|proyek)\s+(.+))?$",
+        r"(?:\s+(?:di|folder|project|proyek|projek)\s+(.+))?$",
         raw,
         re.I,
     )
     if vscode_open:
         path = (vscode_open.group(1) or "").strip()
         return "open_vscode", {"path": path}
+
+    # "buka project pajak jambi" / "buka projek ... kemarin" → VS Code, bukan open_item
+    buka_project = re.match(
+        r"^(?:tolong\s+)?(?:buka|jalankan)\s+"
+        r"(?:(?:di\s+)?(?:vs\s*code|visual\s+studio\s+code|code|cursor)\s+)?"
+        r"(?:project|projek|folder|repo)\s+(.+)$",
+        raw,
+        re.I,
+    )
+    if buka_project:
+        hint = buka_project.group(1).strip()
+        hint = re.sub(
+            r"\s+(?:lalu|terus|dan|,|;)\s+.*$",
+            "",
+            hint,
+            flags=re.I,
+        ).strip()
+        hint = re.sub(
+            r"\s+(?:saya|aku)(?:\s+yang)?(?:\s+(?:kemarin|dulu|sebelumnya|terakhir))?$",
+            "",
+            hint,
+            flags=re.I,
+        ).strip()
+        hint = re.sub(
+            r"\s+yang\s+(?:kemarin|dulu|sebelumnya|terakhir|tadi)$",
+            "",
+            hint,
+            flags=re.I,
+        ).strip()
+        return "open_vscode", {"path": hint}
 
     make_folder = re.match(
         r"^(?:tolong\s+)?(?:buat(?:kan)?|bikin|create)\s+(?:folder|direktori|project|proyek)\s+"
@@ -571,6 +636,12 @@ def match_intents(text: str) -> list[tuple[str, dict]]:
         r"^(he[iy]\s+|halo\s+|hai\s+)?((jin|asghard)\s+)*",
         "",
         text.strip(),
+        flags=re.IGNORECASE,
+    ).strip(" ,.")
+    cleaned = re.sub(
+        r"^(?:tolong(?:lah)?|coba|mohon)\s+",
+        "",
+        cleaned,
         flags=re.IGNORECASE,
     ).strip(" ,.")
     cleaned = smart.resolve_references(cleaned)
@@ -680,7 +751,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_screen",
-            "description": "Ambil screenshot layar dan coba baca tulisannya.",
+            "description": (
+                "Ambil screenshot jendela kerja (bukan Jin) dan baca tulisannya via OCR. "
+                "Pakai jika bos minta baca/lihat layar, isi layar, atau apa yang sedang terbuka."
+            ),
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -688,7 +762,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "screenshot",
-            "description": "Ambil screenshot dan simpan ke Desktop.",
+            "description": "Ambil screenshot dan simpan ke Desktop (tanpa OCR).",
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -788,7 +862,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_files",
-            "description": "Cari file di Desktop, Documents, dan Downloads menurut nama.",
+            "description": (
+                "Cari file menurut nama di Desktop, Documents, Downloads, folder project, "
+                "dan workspace terakhir."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {"query": {"type": "string"}},
@@ -800,7 +877,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Baca isi file teks di laptop. path boleh nama file atau path lengkap.",
+            "description": (
+                "Baca isi file di laptop: teks (.txt/.md/.py/.json/dll), PDF, atau Word (.docx). "
+                "path boleh nama file atau path lengkap."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -850,7 +930,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "open_vscode",
-            "description": "Buka Visual Studio Code. path opsional: folder/file project yang mau dibuka.",
+            "description": (
+                "Buka VS Code/Cursor. path boleh kosong, path folder, atau nama project "
+                "(contoh: 'pajak jambi'). Pakai untuk 'buka project/projek/folder …'."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {"path": {"type": "string"}},

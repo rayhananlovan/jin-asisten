@@ -1,73 +1,93 @@
-# JIN ASGHARD
+<p align="center">
+  <img src="assets/jin-idle.png" width="180" alt="Jin Asghard">
+</p>
 
-Asisten pribadi laptop. Tampilan terminal hijau, ada karakter jin di tengah.
-Tanpa API key. Semua jalan di laptop kamu.
+<h1 align="center">Jin Asghard</h1>
 
-- Ketik atau bicara lewat mic
-- Jin menjawab dengan teks dan suara
-- Bukan bagian dari project pajak
+<p align="center">
+  Asisten laptop lokal untuk Windows. Chat, suara, dan perintah kerja jalan di mesin sendiri, tanpa API key.
+</p>
 
-## Yang dipakai
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/ollama-local-111111" alt="Ollama">
+  <img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
+</p>
 
-- Otak: Ollama (`qwen2.5:7b`) — lebih pintar, lokal
-- Memori: embedding lokal (`nomic-embed-text`) — catatan + fakta + obrolan
-- Dengar: Whisper `tiny` — lokal
-- Bicara: `edge-tts` suara Indonesia dalam/serem
-- Chat + memori: SQLite di folder `data`
+Jin Asghard adalah aplikasi desktop bertema terminal hijau. Karakter jin di tengah jendela berubah saat mendengar, berpikir, dan berbicara. Model bahasa, memori, dan pengenalan suara semuanya lokal.
 
-## Cara jalankan
+## Fitur
 
-1. Install [Ollama](https://ollama.com/download).
-2. Double-click `start.bat`.
-   - Pertama kali akan unduh `qwen2.5:7b` (sekitar 4–5 GB).
-   - Lalu aplikasi Jin terbuka.
+- Chat teks, atau bicara lewat mikrofon. Jawaban bisa dibacakan.
+- Wake word `Jin` atau `Asghard` untuk membuka jendela dan mulai mendengar.
+- Memori semantik untuk catatan, fakta, dan obrolan lama.
+- Baca layar, clipboard, PDF, Word, dan file teks.
+- Catatan, pengingat, pencarian web, volume, dan kunci laptop.
+- Buka VS Code, lanjutkan project kemarin, pasang library, lalu draft commit.
 
-Atau manual:
+## Stack
+
+| Bagian | Teknologi |
+| --- | --- |
+| Antarmuka | CustomTkinter |
+| Model bahasa | Ollama `qwen2.5:7b` |
+| Memori | SQLite + `nomic-embed-text` |
+| Dengar | Whisper `tiny` |
+| Bicara | edge-tts, suara Indonesia |
+| Baca layar | Windows OCR |
+
+## Menjalankan
+
+1. Pasang [Ollama](https://ollama.com/download) dan pastikan `ollama` ada di PATH.
+2. Pasang Python 3.11 atau lebih baru.
+3. Double-click `start.bat`.
+
+Pertama kali, skrip mengunduh model (sekitar 4–5 GB), membuat virtual environment, memasang dependensi, lalu membuka aplikasi.
+
+Manual:
 
 ```bat
 ollama pull qwen2.5:7b
-cd /d D:\jin-asisten
+ollama pull nomic-embed-text
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+copy .env.example .env
 python main.py
 ```
 
 ## Cara pakai
 
-- Ketik di kotak bawah, lalu Enter / **KIRIM**.
-- Klik gambar jin, atau tekan **MIC**, bicara, lalu **STOP**.
-- Bilang **Jin** (atau **Asghard**) untuk memanggil jendela + mulai dengar.
-  - Bisa langsung: *“Jin buka vs code”*.
-- Klik kanan pada jin untuk **radar** harian.
-- Sakelar **SUARA** harus nyala agar Jin bicara terus.
+Ketik di kotak bawah lalu Enter, atau klik jin / tombol **MIC**. Sakelar **SUARA** harus nyala agar Jin berbicara. Klik kanan pada jin membuka radar harian.
 
-Contoh perintah:
+```text
+Jin buka vs code
+radar
+ingat: proyek portofolio pakai React
+baca layar
+cari file catatan
+ringkas
+buka vs code
+lanjut kemarin
+daftar project
+draft commit
+commit dan push
+```
 
-- `radar`
-- `ingat: bos Rehan kerja di Jambi`
-- `baca layar`
-- `volume naik`
-- `mode serius`
-- `tempel Halo dari Jin Asghard`
-- `kunci laptop`
-- `fokus`  /  `pulang`
-- `ringkas`  (PDF, Word, atau halaman yang sedang dibuka)
-- Copy teks di mana saja, lalu jawab `ringkas` / `terjemah` / `catat`
-- `buka vs code`
-- `buat folder web-app di vscode`
-- `install library requests flask`
-- `pip install numpy`  /  `npm install express`
-- `ingat: proyek pajak Jambi`
-- `proyek yang kemarin?`  /  `ingat soal proyek`
-- `apa yang kamu ingat tentang Jambi`
-- `lanjut kemarin`  /  `lanjut coding`  /  `kerja`
-- `lanjut project namafolder`
-- `daftar project`
-- `ringkas commit`  /  `draft commit`
-- `commit`  (pesan auto dari ringkasan diff)
-- `commit dan push`
-- `commit pesan: perbaiki bug login`
-- `push`
+## Konfigurasi
 
-Data chat: `D:\jin-asisten\data\jin.db`
+Salin `.env.example` menjadi `.env`. File itu tidak ikut di-commit.
+
+| Variabel | Fungsi |
+| --- | --- |
+| `OLLAMA_MODEL` | Model chat lokal |
+| `JIN_EMBED_MODEL` | Model memori semantik |
+| `WHISPER_MODEL` | Model pengenalan suara |
+| `OWNER_NAME` / `OWNER_CALL` | Nama dan sapaan pemilik |
+| `JIN_VOICE` | Suara edge-tts |
+| `JIN_WAKE_WORDS` | Kata pemanggil, dipisah koma |
+| `JIN_PROJECTS_DIR` | Folder project yang dipindai |
+
+## Privasi
+
+Obrolan, catatan, dan embedding tersimpan di `data/jin.db` pada laptop. Folder `data/`, `.venv/`, dan `.env` diabaikan git.

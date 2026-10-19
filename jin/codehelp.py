@@ -213,10 +213,29 @@ def _scan_recent_projects(limit: int = 10) -> list[Path]:
     return [path for _mtime, path in scored[:limit]]
 
 
-def resolve_project(hint: str = "") -> Path | None:
+def resolve_project(hint: str = "", *, strict: bool = False) -> Path | None:
+    """Find a project folder.
+
+    If hint is non-empty, only return a path that matches that hint
+    (unless strict=False and you want legacy fallback — use fallback=True).
+    Empty hint → last workspace / history / recent.
+    """
     raw = (hint or "").strip().strip('"').strip("'")
     raw = re.sub(
-        r"^(?:yang\s+)?(?:kemarin|dulu|sebelumnya|terakhir|project|proyek)\s*",
+        r"^(?:yang\s+)?(?:kemarin|dulu|sebelumnya|terakhir|project|proyek|projek)\s*",
+        "",
+        raw,
+        flags=re.I,
+    ).strip()
+    # Drop trailing noise: "saya kemarin", "yang tadi"
+    raw = re.sub(
+        r"\s+(?:saya|aku)(?:\s+yang)?(?:\s+(?:kemarin|dulu|sebelumnya|terakhir))?$",
+        "",
+        raw,
+        flags=re.I,
+    ).strip()
+    raw = re.sub(
+        r"\s+yang\s+(?:kemarin|dulu|sebelumnya|terakhir|tadi)$",
         "",
         raw,
         flags=re.I,
@@ -230,14 +249,26 @@ def resolve_project(hint: str = "") -> Path | None:
         if alt.exists():
             return alt
         needle = raw.lower()
+        tokens = [t for t in re.split(r"\s+", needle) if len(t) > 1]
+
+        def _name_match(path: Path) -> bool:
+            name = path.name.lower()
+            if name == needle or needle in name or name in needle:
+                return True
+            if tokens and all(token in name for token in tokens):
+                return True
+            return False
+
         for item in _load_history():
             path = Path(str(item.get("path") or ""))
-            if path.name.lower() == needle or needle in path.name.lower():
-                if path.exists():
-                    return path
-        for path in _scan_recent_projects(16):
-            if path.name.lower() == needle or needle in path.name.lower():
+            if path.exists() and _name_match(path):
                 return path
+        for path in _scan_recent_projects(24):
+            if _name_match(path):
+                return path
+        # Hint given but nothing matched — do NOT open an unrelated project.
+        if strict or raw:
+            return None
 
     ctx = _workspace_from_context()
     if ctx and ctx.exists():
@@ -252,6 +283,32 @@ def resolve_project(hint: str = "") -> Path | None:
     return recent[0] if recent else None
 
 
+def _launch_editor(binary: str, *args: str) -> None:
+    """Start VS Code/Cursor reliably on Windows (detached from Jin)."""
+    cmd = [binary, *[str(a) for a in args if str(a)]]
+    if os.name == "nt":
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+        )
+        # start.exe avoids parent-console quirks with GUI apps
+        subprocess.Popen(
+            ["cmd", "/c", "start", "", "/B", *cmd],
+            close_fds=True,
+            creationflags=flags,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    subprocess.Popen(
+        cmd,
+        close_fds=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def open_vscode(path: str = "") -> str:
     editor = find_editor()
     if not editor:
@@ -260,7 +317,7 @@ def open_vscode(path: str = "") -> str:
     binary, label = editor
     target = (path or "").strip().strip('"').strip("'")
     if not target:
-        subprocess.Popen([binary], close_fds=True)
+        _launch_editor(binary)
         return f"{label} dibuka."
 
     if _SHELL_BAD.search(target):
@@ -272,9 +329,17 @@ def open_vscode(path: str = "") -> str:
         if alt.exists():
             folder = alt
         else:
-            return f"Folder/file tidak ada: {folder}"
+            resolved = resolve_project(target, strict=True)
+            if resolved and resolved.exists():
+                folder = resolved
+            else:
+                known = list_known_projects(5)
+                return (
+                    f"Folder/project tidak ketemu: {target}\n"
+                    f"Coba path lengkap, atau sebut nama yang lebih pendek.\n{known}"
+                )
 
-    subprocess.Popen([binary, str(folder)], close_fds=True)
+    _launch_editor(binary, str(folder.resolve()))
     if folder.is_file():
         remember_project(folder.parent)
         return f"{label} membuka file: {folder.name}"

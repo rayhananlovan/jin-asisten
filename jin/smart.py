@@ -82,27 +82,28 @@ def resolve_references(text: str) -> str:
         return text
 
     resolved = text
+    # Callable repl avoids re treating Windows paths (e.g. D:\P...) as escapes.
     resolved = re.sub(
         r"\b(catat(?:kan|in)?|simpan catatan)\s+(itu|hasilnya|yang tadi|tadi itu|yang barusan)\b",
-        f"catat: {result}",
+        lambda _m, value=result: f"catat: {value}",
         resolved,
         flags=re.IGNORECASE,
     )
     resolved = re.sub(
         r"\bbuka\s+(itu|yang tadi|file itu|itu tadi|yang barusan)\b",
-        f"buka {opened}",
+        lambda _m, value=opened: f"buka {value}",
         resolved,
         flags=re.IGNORECASE,
     )
     resolved = re.sub(
         r"\b(cari(?:kan)?|google(?:kan)?)\s+(itu|yang tadi|itu tadi)\b",
-        f"cari {topic}",
+        lambda _m, value=topic: f"cari {value}",
         resolved,
         flags=re.IGNORECASE,
     )
     resolved = re.sub(
         r"\bingatkan(?:\s+saya)?(?:\s+untuk)?\s+(itu|yang tadi|hasilnya)\b",
-        f"ingatkan {topic}",
+        lambda _m, value=topic: f"ingatkan {value}",
         resolved,
         flags=re.IGNORECASE,
     )
@@ -203,9 +204,43 @@ def _maybe_remember_ide_project(title: str) -> None:
 
 
 def _search_roots() -> list[Path]:
+    from jin.config import PROJECTS_DIR, ROOT
+
     home = Path.home()
-    roots = [home / "Desktop", home / "Documents", home / "Downloads", Path("D:\\jin-asisten")]
-    return [path for path in roots if path.exists()]
+    roots: list[Path] = [
+        home / "Desktop",
+        home / "Documents",
+        home / "Downloads",
+        home / "source",
+        home / "projects",
+        home / "dev",
+        PROJECTS_DIR,
+        ROOT,
+    ]
+    ctx = load_context()
+    for key in ("workspace", "project", "file"):
+        raw = str(ctx.get(key) or "").strip()
+        if not raw or raw.lower() in {"vscode", "code", "cursor"}:
+            continue
+        path = Path(os.path.expandvars(raw)).expanduser()
+        if path.is_file():
+            path = path.parent
+        if path.is_dir():
+            roots.append(path)
+            if path.parent.is_dir():
+                roots.append(path.parent)
+    seen: set[str] = set()
+    out: list[Path] = []
+    for path in roots:
+        try:
+            key = str(path.resolve()).lower()
+        except OSError:
+            key = str(path).lower()
+        if key in seen or not path.exists():
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
 
 
 def search_files(query: str, limit: int = 8) -> str:
@@ -217,7 +252,7 @@ def search_files(query: str, limit: int = 8) -> str:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [name for name in dirnames if name not in SKIP_DIRS and not name.startswith(".")]
             depth = Path(dirpath).relative_to(root).parts
-            if len(depth) > 3:
+            if len(depth) > 5:
                 dirnames[:] = []
                 continue
             for name in filenames:
@@ -230,7 +265,10 @@ def search_files(query: str, limit: int = 8) -> str:
         if len(hits) >= limit:
             break
     if not hits:
-        return f"Tidak ketemu file bernama mirip '{query}' di Desktop/Documents/Downloads."
+        return (
+            f"Tidak ketemu file bernama mirip '{query}' di Desktop/Documents/Downloads/"
+            "project. Coba nama lebih pendek atau path lengkap."
+        )
     save_context({"file": str(hits[0]), "topic": hits[0].name})
     lines = [f"{index}. {path}" for index, path in enumerate(hits, start=1)]
     return "File ketemu:\n" + "\n".join(lines)
