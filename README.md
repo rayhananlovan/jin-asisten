@@ -5,7 +5,7 @@
 <h1 align="center">Jin Asghard</h1>
 
 <p align="center">
-  Asisten laptop lokal untuk Windows. Chat, suara, dan perintah kerja jalan di mesin sendiri, tanpa API key.
+  Asisten laptop lokal untuk Windows. Dengan mendengarkan perintah suara lewat mic, JIN bisa melakukan segalanya!
 </p>
 
 <p align="center">
