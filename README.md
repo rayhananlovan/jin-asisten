@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/jin-idle.png" width="180" alt="Jin Asghard">
+  <img src="assets/preview.jpg" alt="Jin Asghard terbuka di samping VS Code" width="100%">
 </p>
 
 <h1 align="center">Jin Asghard</h1>
@@ -14,16 +14,68 @@
   <img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
 </p>
 
-Jin Asghard adalah aplikasi desktop bertema terminal hijau. Karakter jin di tengah jendela berubah saat mendengar, berpikir, dan berbicara. Model bahasa, memori, dan pengenalan suara semuanya lokal.
+Jin Asghard adalah aplikasi desktop bertema terminal hijau. Karakter jin di tengah jendela berubah saat mendengar, berpikir, dan berbicara. Model bahasa, memori, dan pengenalan suara semuanya lokal. Satu kalimat bisa berisi beberapa perintah, dan Jin menjalankannya berurutan.
 
-## Fitur
+## Kemampuan
 
-- Chat teks, atau bicara lewat mikrofon. Jawaban bisa dibacakan.
-- Wake word `Jin` atau `Asghard` untuk membuka jendela dan mulai mendengar.
-- Memori semantik untuk catatan, fakta, dan obrolan lama.
-- Baca layar, clipboard, PDF, Word, dan file teks.
-- Catatan, pengingat, pencarian web, volume, dan kunci laptop.
-- Buka VS Code, lanjutkan project kemarin, pasang library, lalu draft commit.
+### Bicara dan dengar
+
+- Ketik pesan lalu **KIRIM**, atau bicara lewat mikrofon.
+- Ucapkan **Jin** atau **Asghard** untuk memanggil jendela dan langsung mulai mendengar. Perintah bisa menyusul, misalnya `Jin buka vs code`.
+- Jawaban dibacakan dengan suara Indonesia kalau sakelar **SUARA** menyala.
+- Notifikasi Windows muncul untuk pengingat, teks yang baru disalin, dan saran istirahat.
+
+### Ingatan
+
+- Menyimpan fakta dengan `ingat: ...`, plus catatan dan pengingat.
+- Memori semantik memakai embedding lokal, jadi pertanyaan seperti `proyek yang kemarin?` mencari catatan, fakta, dan obrolan lama, bukan cuma chat yang sedang terbuka.
+- Fakta yang terucap dalam obrolan bisa tersimpan sendiri.
+- **Radar** merangkum tanggal, wujud aktif, pengingat, catatan terakhir, dan ingatan.
+- Jam 07.00, radar pagi menambahkan cuaca dan file yang berubah kemarin.
+
+### Layar, file, dan clipboard
+
+- `baca layar` menjepret layar lalu membaca teksnya dengan Windows OCR.
+- `screenshot` menyimpan gambar layar.
+- Mencari file di Desktop, Documents, Downloads, dan folder project, lalu membaca teks, PDF, dan Word.
+- `ringkas` merangkum PDF, Word, atau halaman yang sedang dibuka.
+- Mengawasi clipboard. Teks biasa ditawarkan untuk diringkas, diterjemahkan, atau dicatat. Cuplikan kode dicatat diam-diam tanpa mengganggu.
+- `tempel ...` menaruh teks di jendela yang tadi aktif.
+
+### Laptop
+
+- Membuka aplikasi, folder, path, atau URL. Nama seperti Chrome, Notepad, dan Desktop dikenali.
+- Mengatur volume: naik, turun, atau mute.
+- Mengunci laptop.
+- Mencari di web, dan bisa langsung membuka hasilnya di browser.
+- Mengingatkan istirahat setelah sekitar 50 menit berada di kode.
+
+### Ngoding
+
+- Membuka VS Code di folder yang disebut, atau di project yang terakhir dikerjakan.
+- Membuat folder project baru lalu membukanya di editor.
+- `lanjut kemarin` membuka project, menampilkan status git, memasang dependensi yang belum ada (`npm install` atau `pip install -r requirements.txt`), lalu membuka terminal di folder itu.
+- Mengingat jejak project dan menampilkannya lewat `daftar project`.
+- Memasang library dengan pip, npm, yarn, atau pnpm.
+- `draft commit` meringkas diff menjadi pesan commit. `commit` memakai pesan itu, `commit pesan: ...` memakai pesan sendiri, dan `commit dan push` mengirimnya ke remote.
+- Saat commit, file sensitif seperti `.env` dan kunci privat dikeluarkan dari staging.
+
+### Wujud dan gerakan di karakter
+
+Tiga wujud mengubah gaya bicara: **tenang**, **nyentrik**, dan **serius**. Ganti lewat `mode serius`, atau geser gambar jin ke kiri/kanan.
+
+| Gerakan | Hasil |
+| --- | --- |
+| Klik lampu | Mulai atau hentikan mikrofon |
+| Klik dada | Catatan cepat dari clipboard, atau ketik catatan baru |
+| Geser kiri/kanan | Ganti wujud |
+| Klik kanan | Radar harian |
+
+Tiga mantra singkat:
+
+- `fokus` — wujud serius, volume turun, lalu radar.
+- `lanjut` atau `kerja` — wujud serius, lalu lanjutkan sesi coding.
+- `pulang` — pamit, lalu mengunci laptop.
 
 ## Stack
 
@@ -56,9 +108,7 @@ copy .env.example .env
 python main.py
 ```
 
-## Cara pakai
-
-Ketik di kotak bawah lalu Enter, atau klik jin / tombol **MIC**. Sakelar **SUARA** harus nyala agar Jin berbicara. Klik kanan pada jin membuka radar harian.
+## Contoh perintah
 
 ```text
 Jin buka vs code
@@ -66,10 +116,17 @@ radar
 ingat: proyek portofolio pakai React
 baca layar
 cari file catatan
+baca D:\folder\dokumen.pdf
 ringkas
-buka vs code
+terjemah
+volume naik
+mode serius
+tempel Halo dari Jin Asghard
+kunci laptop
+fokus
 lanjut kemarin
 daftar project
+install library requests
 draft commit
 commit dan push
 ```
