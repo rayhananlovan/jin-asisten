@@ -94,7 +94,7 @@ Tiga mantra singkat:
 2. Pasang Python 3.11 atau lebih baru.
 3. Double-click `start.bat`.
 
-Pertama kali, skrip mengunduh model (sekitar 4–5 GB), membuat virtual environment, memasang dependensi, lalu membuka aplikasi.
+Pertama kali, skrip mengunduh model (sekitar 5–7 GB), membuat virtual environment, memasang dependensi, lalu membuka aplikasi.
 
 Manual:
 
