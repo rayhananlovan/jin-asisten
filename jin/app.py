@@ -9,14 +9,24 @@ from tkinter import messagebox
 import customtkinter as ctk
 from PIL import Image
 
-from jin import db
+from jin import db, settings
 from jin.actions import windows_toast
-from jin.config import JIN_IMAGE, JIN_SPEAK, JIN_WAKE, MOOD_IMAGES, OWNER_CALL
+from jin.config import (
+    JIN_CLIPBOARD,
+    JIN_IMAGE,
+    JIN_SPEAK,
+    JIN_TRAY,
+    JIN_WAKE,
+    MOOD_IMAGES,
+    OWNER_CALL,
+)
 from jin.llm import reply
 from jin.magic import current_form, cycle_form, looks_like_code, new_clipboard_text
 from jin.smart import code_shadow, save_context, start_window_watcher
 from jin.recorder import MicRecorder
+from jin.settings_ui import SettingsWindow
 from jin.stt import transcribe
+from jin.tray import JinTray
 from jin.tts import speak
 from jin.wake import WakeListener
 from jin import memory as jin_memory
@@ -34,7 +44,7 @@ WAKE_RE = re.compile(
 
 
 class JinApp(ctk.CTk):
-    def __init__(self) -> None:
+    def __init__(self, start_minimized: bool = False) -> None:
         super().__init__()
         self.title("JIN ASGHARD - v1.0")
         self.geometry("540x860")
@@ -60,16 +70,26 @@ class JinApp(ctk.CTk):
         self._clip_offer_at = 0.0
         self._drag_x = 0
         self.shell = None
+        self.clipboard_enabled = JIN_CLIPBOARD
+        self.close_to_tray = JIN_TRAY
+        self._tray: JinTray | None = None
+        self._tray_hint_shown = False
+        self._settings_win: SettingsWindow | None = None
+        self._stream_text = ""
+        self._stream_queued = False
 
         self._build()
         self._boot()
         self._start_wake()
+        self._start_tray()
         start_window_watcher()
         self.after(4000, self._poll_reminders)
         self.after(400, self._idle_float)
         self.after(60_000, self._guardian)
         self.after(2500, self._poll_clipboard)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        if start_minimized and self._tray is not None:
+            self.withdraw()
 
     def _build(self) -> None:
         self.shell = ctk.CTkFrame(self, fg_color=BG, border_color=BORDER, border_width=2, corner_radius=18)
@@ -104,6 +124,20 @@ class JinApp(ctk.CTk):
         self.speak_switch.pack(side="right", padx=8)
         if self.speak_enabled:
             self.speak_switch.select()
+
+        ctk.CTkButton(
+            title,
+            text="⚙",
+            width=32,
+            height=28,
+            fg_color=BG,
+            hover_color="#0a2a14",
+            border_color=DIM,
+            border_width=1,
+            text_color=GREEN,
+            font=ctk.CTkFont(size=14),
+            command=self.open_settings,
+        ).pack(side="right", padx=(0, 4))
 
         bottom = ctk.CTkFrame(self.shell, fg_color=PANEL, border_color=GREEN, border_width=2, corner_radius=10)
         bottom.pack(side="bottom", fill="x", padx=18, pady=(0, 14))
@@ -448,7 +482,7 @@ class JinApp(ctk.CTk):
                 if name in {"set_form", "mantra"}:
                     self.after(0, self._apply_form_shell)
 
-            text = reply(history, on_tool=on_tool)
+            text = reply(history, on_tool=on_tool, on_token=self._on_token)
             db.add_message(self.conversation_id, "assistant", text)
         except Exception:
             error = traceback.format_exc()
@@ -456,6 +490,7 @@ class JinApp(ctk.CTk):
             return
 
         def show() -> None:
+            self._stream_text = ""
             self._log(f"[JIN] {text}")
             self.bubble.configure(text=text.upper() if len(text) < 80 else text)
             if self.speak_enabled:
@@ -466,6 +501,20 @@ class JinApp(ctk.CTk):
                 self._lock(False)
 
         self.after(0, show)
+
+    def _on_token(self, text_so_far: str) -> None:
+        """Called from the worker thread; coalesce updates into one Tk call at a time."""
+        self._stream_text = text_so_far
+        if not self._stream_queued:
+            self._stream_queued = True
+            self.after(60, self._flush_stream)
+
+    def _flush_stream(self) -> None:
+        self._stream_queued = False
+        text = self._stream_text
+        if text:
+            self.bubble.configure(text=text if len(text) <= 280 else "…" + text[-280:])
+            self._set_status("JIN: MENJAWAB...")
 
     def _speak(self, text: str) -> None:
         try:
@@ -589,7 +638,7 @@ class JinApp(ctk.CTk):
         self.input.focus_set()
 
     def _poll_clipboard(self) -> None:
-        if not self.busy and not self.recorder.recording:
+        if self.clipboard_enabled and not self.busy and not self.recorder.recording:
             text = new_clipboard_text()
             if text:
                 now = datetime.now().timestamp()
@@ -622,10 +671,55 @@ class JinApp(ctk.CTk):
             return
         self._handle_user_text("radar")
 
+    def _start_tray(self) -> None:
+        try:
+            self._tray = JinTray(
+                on_show=lambda: self.after(0, self.show_window),
+                on_mic=lambda: self.after(0, self.summon),
+                on_settings=lambda: self.after(0, self.open_settings),
+                on_quit=lambda: self.after(0, self.quit_app),
+            )
+            self._tray.start()
+        except Exception as exc:
+            self._tray = None
+            self._log(f"[WARN] tray gagal: {exc}")
+
+    def show_window(self) -> None:
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def open_settings(self) -> None:
+        self.show_window()
+        if self._settings_win is not None and self._settings_win.winfo_exists():
+            self._settings_win.focus_force()
+            return
+        self._settings_win = SettingsWindow(self, on_applied=self._apply_settings)
+
+    def _apply_settings(self, values: dict[str, str]) -> None:
+        self.clipboard_enabled = values.get("JIN_CLIPBOARD", "1") != "0"
+        self.close_to_tray = values.get("JIN_TRAY", "1") != "0"
+        self._log("[SPELL] pengaturan disimpan")
+
     def _on_close(self) -> None:
+        if self.close_to_tray and self._tray is not None:
+            self.withdraw()
+            if not self._tray_hint_shown:
+                self._tray_hint_shown = True
+                self._tray.notify("Jin tetap jalan di tray. Klik kanan ikon untuk keluar.")
+            return
+        self.quit_app()
+
+    def quit_app(self) -> None:
         if self._wake is not None:
             try:
                 self._wake.stop()
             except Exception:
                 pass
+        if self._tray is not None:
+            self._tray.stop()
         self.destroy()
+
+    def restart(self) -> None:
+        settings.restart()
+        self.quit_app()

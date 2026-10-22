@@ -20,10 +20,10 @@ INSTALL_HINT = (
 )
 
 
-def _chat(messages: list[dict], use_tools: bool = False) -> dict:
+def _chat(messages: list[dict], use_tools: bool = False, on_token=None) -> dict:
     payload = {
         "model": OLLAMA_MODEL,
-        "stream": False,
+        "stream": True,
         "messages": messages,
         "options": {"temperature": 0.4},
     }
@@ -35,16 +35,33 @@ def _chat(messages: list[dict], use_tools: bool = False) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+    content: list[str] = []
+    tool_calls: list[dict] = []
     try:
         with urllib.request.urlopen(request, timeout=180) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            for line in response:
+                if not line.strip():
+                    continue
+                chunk = json.loads(line.decode("utf-8"))
+                if chunk.get("error"):
+                    raise RuntimeError(
+                        f"Ollama error: {chunk['error']}\n\nCoba jalankan: ollama pull {OLLAMA_MODEL}"
+                    )
+                message = chunk.get("message") or {}
+                piece = message.get("content") or ""
+                if piece:
+                    content.append(piece)
+                    if on_token:
+                        on_token("".join(content))
+                tool_calls.extend(message.get("tool_calls") or [])
+                if chunk.get("done"):
+                    break
     except urllib.error.URLError as exc:
         raise RuntimeError(INSTALL_HINT) from exc
-    if data.get("error"):
-        raise RuntimeError(
-            f"Ollama error: {data['error']}\n\nCoba jalankan: ollama pull {OLLAMA_MODEL}"
-        )
-    return data.get("message") or {}
+    result: dict = {"role": "assistant", "content": "".join(content)}
+    if tool_calls:
+        result["tool_calls"] = tool_calls
+    return result
 
 
 def _arguments(call: dict) -> dict:
@@ -57,10 +74,10 @@ def _arguments(call: dict) -> dict:
     return raw if isinstance(raw, dict) else {}
 
 
-def _with_tools(messages: list[dict], on_tool=None) -> str:
+def _with_tools(messages: list[dict], on_tool=None, on_token=None) -> str:
     current = list(messages)
     for _ in range(6):
-        message = _chat(current, use_tools=True)
+        message = _chat(current, use_tools=True, on_token=on_token)
         tool_calls = message.get("tool_calls") or []
         text = (message.get("content") or "").strip()
         if not tool_calls:
@@ -76,7 +93,8 @@ def _with_tools(messages: list[dict], on_tool=None) -> str:
     return text or "Aksi sudah dijalankan."
 
 
-def reply(history: list[dict[str, str]], on_tool=None) -> str:
+def reply(history: list[dict[str, str]], on_tool=None, on_token=None) -> str:
+    """on_token receives the full text-so-far each time a new piece streams in."""
     history = [dict(item) for item in history]
     last_index = next(
         (index for index in range(len(history) - 1, -1, -1) if history[index].get("role") == "user"),
@@ -128,6 +146,9 @@ def reply(history: list[dict[str, str]], on_tool=None) -> str:
                 ),
             }
         )
-        message = _chat(messages, use_tools=False)
+        message = _chat(messages, use_tools=False, on_token=on_token)
         return (message.get("content") or joined).strip()
-    return _with_tools(messages, on_tool=on_tool).strip() or "Aku belum bisa menjawab itu, bos Rehan."
+    return (
+        _with_tools(messages, on_tool=on_tool, on_token=on_token).strip()
+        or "Aku belum bisa menjawab itu, bos Rehan."
+    )

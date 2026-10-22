@@ -204,7 +204,7 @@ def _maybe_remember_ide_project(title: str) -> None:
 
 
 def _search_roots() -> list[Path]:
-    from jin.config import PROJECTS_DIR, ROOT
+    from jin.config import APP_HOME, PROJECTS_DIR
 
     home = Path.home()
     roots: list[Path] = [
@@ -215,7 +215,7 @@ def _search_roots() -> list[Path]:
         home / "projects",
         home / "dev",
         PROJECTS_DIR,
-        ROOT,
+        APP_HOME,
     ]
     ctx = load_context()
     for key in ("workspace", "project", "file"):

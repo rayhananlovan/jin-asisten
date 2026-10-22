@@ -283,6 +283,8 @@ def _execute(name: str, args: dict) -> str:
         return smart.laptop_context()
     if name == "read_screen":
         return magic.read_screen()
+    if name == "describe_screen":
+        return magic.describe_screen(str(args.get("question") or ""))
     if name == "clipboard_get":
         return magic.clipboard_get()
     if name == "clipboard_set":
@@ -444,6 +446,19 @@ def match_intent(text: str) -> tuple[str, dict] | None:
         return "daily_radar", {}
     if re.match(r"^(jendela (apa|aktif)|lagi ngapain|kerjaan apa)\b", lower):
         return "laptop_context", {}
+    describe = re.match(
+        r"^(?:tolong\s+|coba\s+)?(?:"
+        r"(?:jelaskan|jelasin|pahami|analisa|analisis|terangkan)\s+(?:apa\s+(?:yang\s+)?(?:ada\s+)?di\s+)?"
+        r"(?:isi\s+)?layar(?:\s+(?:ini|saya))?"
+        r"|(?:layar|error)\s+ini\s+(?:error\s+)?(?:apa|kenapa|maksudnya\s+apa)"
+        r"|kenapa\s+(?:error|eror)\s+(?:ini|di\s+layar)"
+        r"|apa\s+yang\s+terjadi\s+di\s+layar"
+        r")\s*[,:\-]?\s*(.*)$",
+        raw,
+        re.I,
+    )
+    if describe:
+        return "describe_screen", {"question": (describe.group(1) or "").strip() or raw}
     if re.match(
         r"^(?:tolong\s+|coba\s+)?(?:baca(?:in)?|lihat|ocr|bacakan)\s+"
         r"(?:isi\s+)?(?:layar|screen)(?:\s+saya)?(?:\s+yang\s+(?:sedang\s+)?(?:dibuka|terbuka))?$",
@@ -756,6 +771,20 @@ TOOLS = [
                 "Pakai jika bos minta baca/lihat layar, isi layar, atau apa yang sedang terbuka."
             ),
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "describe_screen",
+            "description": (
+                "Lihat jendela kerja dengan model vision lokal lalu jelaskan isinya. "
+                "Pakai jika bos minta jelaskan/pahami layar, atau tanya arti error yang tampil."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"question": {"type": "string"}},
+            },
         },
     },
     {

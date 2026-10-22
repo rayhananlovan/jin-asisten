@@ -22,7 +22,7 @@ Jin Asghard adalah aplikasi desktop bertema terminal hijau. Karakter jin di teng
 
 - Ketik pesan lalu **KIRIM**, atau bicara lewat mikrofon.
 - Ucapkan **Jin** atau **Asghard** untuk memanggil jendela dan langsung mulai mendengar. Perintah bisa menyusul, misalnya `Jin buka vs code`.
-- Jawaban dibacakan dengan suara Indonesia kalau sakelar **SUARA** menyala.
+- Jawaban muncul bertahap di gelembung saat Jin masih mengetik, lalu dibacakan dengan suara Indonesia kalau sakelar **SUARA** menyala.
 - Notifikasi Windows muncul untuk pengingat, teks yang baru disalin, dan saran istirahat.
 
 ### Ingatan
@@ -35,7 +35,8 @@ Jin Asghard adalah aplikasi desktop bertema terminal hijau. Karakter jin di teng
 
 ### Layar, file, dan clipboard
 
-- `baca layar` menjepret layar lalu membaca teksnya dengan Windows OCR.
+- `baca layar` menjepret jendela yang sedang dipakai (bukan jendela Jin) lalu membaca teksnya dengan Windows OCR.
+- `jelaskan layar` atau `kenapa error ini` membiarkan model vision lokal melihat jendela itu dan menjelaskan isinya, termasuk arti pesan error. Kalau model vision belum terpasang, Jin kembali ke OCR.
 - `screenshot` menyimpan gambar layar.
 - Mencari file di Desktop, Documents, Downloads, dan folder project, lalu membaca teks, PDF, dan Word.
 - `ringkas` merangkum PDF, Word, atau halaman yang sedang dibuka.
@@ -87,6 +88,9 @@ Tiga mantra singkat:
 | Dengar | Whisper `tiny` |
 | Bicara | edge-tts, suara Indonesia |
 | Baca layar | Windows OCR |
+| Pahami layar | Ollama `qwen2.5vl:3b` (opsional) |
+| Tray | pystray |
+| Paket `.exe` | PyInstaller + Inno Setup |
 
 ## Menjalankan
 
@@ -108,6 +112,21 @@ copy .env.example .env
 python main.py
 ```
 
+Untuk `jelaskan layar`, pasang model vision sekali: `ollama pull qwen2.5vl:3b` (sekitar 3 GB).
+
+### Aplikasi `.exe`
+
+Jalankan `build.bat`. Hasilnya `dist\JinAsghard\JinAsghard.exe`. Kalau [Inno Setup 6](https://jrsoftware.org/isdl.php) terpasang, skrip itu sekalian membuat installer `dist\JinAsghard-Setup-1.0.0.exe`.
+
+Versi `.exe` menyimpan `.env` dan data di folder `userdata` di samping `JinAsghard.exe`, terpisah dari folder project ini. Installer menawarkan `D:\JinAsghard` kalau drive D ada.
+
+Model Ollama dan Whisper ikut variabel `OLLAMA_MODELS` dan `HF_HOME`. Arahkan keduanya ke drive lain kalau C penuh.
+
+### Tray dan pengaturan
+
+- Tombol **⚙** membuka Pengaturan: nama, model, suara, kata panggil, folder project, pantau clipboard, sembunyi ke tray, dan jalan otomatis saat Windows menyala.
+- Tombol tutup menyembunyikan Jin ke tray. Klik kanan ikon tray untuk **Keluar**.
+
 ## Contoh perintah
 
 ```text
@@ -115,6 +134,8 @@ Jin buka vs code
 radar
 ingat: proyek portofolio pakai React
 baca layar
+jelaskan layar
+kenapa error ini
 cari file catatan
 baca D:\folder\dokumen.pdf
 ringkas
@@ -138,6 +159,9 @@ Salin `.env.example` menjadi `.env`. File itu tidak ikut di-commit.
 | Variabel | Fungsi |
 | --- | --- |
 | `OLLAMA_MODEL` | Model chat lokal |
+| `JIN_VISION_MODEL` | Model vision untuk `jelaskan layar` |
+| `JIN_CLIPBOARD` | `0` mematikan tawaran saat menyalin teks |
+| `JIN_TRAY` | `0` membuat tombol tutup benar-benar keluar |
 | `JIN_EMBED_MODEL` | Model memori semantik |
 | `WHISPER_MODEL` | Model pengenalan suara |
 | `OWNER_NAME` / `OWNER_CALL` | Nama dan sapaan pemilik |

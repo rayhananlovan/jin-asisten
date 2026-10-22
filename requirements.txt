@@ -13,3 +13,4 @@ pypdf>=5.0.0
 python-docx>=1.1.2
 ddgs>=9.0.0
 winocr>=0.0.15
+pystray>=0.19.5
