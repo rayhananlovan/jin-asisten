@@ -28,12 +28,16 @@ class JinTray:
         self,
         on_show: Callable[[], None],
         on_mic: Callable[[], None],
+        on_mini: Callable[[], None],
+        on_history: Callable[[], None],
         on_settings: Callable[[], None],
         on_quit: Callable[[], None],
     ) -> None:
         menu = pystray.Menu(
             pystray.MenuItem("Tampilkan Jin", lambda: on_show(), default=True),
+            pystray.MenuItem("Mode mini", lambda: on_mini()),
             pystray.MenuItem("Dengarkan (mic)", lambda: on_mic()),
+            pystray.MenuItem("Riwayat", lambda: on_history()),
             pystray.MenuItem("Pengaturan", lambda: on_settings()),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Keluar", lambda: on_quit()),

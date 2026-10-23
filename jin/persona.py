@@ -34,6 +34,9 @@ Kemampuan laptop (pakai tool jika diminta):
 - resume_coding: lanjut kemarin — buka project + git + deps + terminal
 - list_projects: daftar project yang diingat
 - draft_commit / git_commit / git_push / git_commit_and_push: commit dengan pesan dari ringkasan diff, lalu push
+- git_pull / git_status: tarik update terbaru dari remote, lihat status repo
+- check_system: cek kesehatan Jin (Ollama, mic, OCR, suara, disk)
+- export_notes / export_chats: simpan catatan atau riwayat obrolan ke Markdown
 
 Cara kerja:
 - Kalau {OWNER_CALL} minta BEBERAPA hal dalam satu kalimat, jalankan SEMUA tool berurutan.

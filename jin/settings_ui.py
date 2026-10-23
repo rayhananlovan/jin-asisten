@@ -5,9 +5,14 @@ from typing import Callable
 
 import customtkinter as ctk
 
+import os
+
 from jin import settings
 from jin.config import (
+    APP_HOME,
+    HOTKEY,
     JIN_CLIPBOARD,
+    JIN_CONFIRM,
     JIN_PITCH,
     JIN_RATE,
     JIN_TRAY,
@@ -20,6 +25,8 @@ from jin.config import (
     VISION_MODEL,
     WAKE_WORDS,
 )
+from jin.hotkey import to_pynput
+from jin.logs import LOG_DIR
 from jin.magic import _installed_models
 
 BG = "#010805"
@@ -89,6 +96,12 @@ class SettingsWindow(ctk.CTkToplevel):
             "Kata panggil (pisah koma)",
             value("JIN_WAKE_WORDS", ",".join(WAKE_WORDS)),
         )
+        self._entry(
+            body,
+            "JIN_HOTKEY",
+            "Tombol pintas panggil Jin (mis. ctrl+alt+j, win+j; kosong = mati)",
+            current.get("JIN_HOTKEY", HOTKEY),
+        )
 
         self._section(body, "KERJA")
         self._folder(body, "JIN_PROJECTS_DIR", "Folder project", value("JIN_PROJECTS_DIR", str(PROJECTS_DIR)))
@@ -97,6 +110,12 @@ class SettingsWindow(ctk.CTkToplevel):
             "JIN_CLIPBOARD",
             "Tawarkan ringkas/terjemah saat copy teks",
             value("JIN_CLIPBOARD", "1" if JIN_CLIPBOARD else "0"),
+        )
+        self._switch(
+            body,
+            "JIN_CONFIRM",
+            "Minta izin sebelum commit, push, install, kunci laptop",
+            value("JIN_CONFIRM", "1" if JIN_CONFIRM else "0"),
         )
 
         self._section(body, "APLIKASI")
@@ -111,6 +130,22 @@ class SettingsWindow(ctk.CTkToplevel):
         self._autostart.pack(anchor="w", padx=12, pady=6)
         if settings.autostart_enabled():
             self._autostart.select()
+
+        self._label(body, f"Folder data: {APP_HOME}")
+        folders = ctk.CTkFrame(body, fg_color="transparent")
+        folders.pack(fill="x", padx=12, pady=(2, 10))
+        for text, folder in (("BUKA FOLDER DATA", APP_HOME), ("BUKA LOG", LOG_DIR)):
+            ctk.CTkButton(
+                folders,
+                text=text,
+                fg_color=BG,
+                border_color=DIM,
+                border_width=1,
+                text_color=GREEN,
+                hover_color="#0a2a14",
+                font=ctk.CTkFont(family=MONO, size=11),
+                command=lambda path=folder: os.startfile(path),  # noqa: S606
+            ).pack(side="left", padx=(0, 6))
 
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=14, pady=(0, 14))
@@ -215,6 +250,12 @@ class SettingsWindow(ctk.CTkToplevel):
     def _save(self) -> None:
         before = settings.read_env()
         updates = {key: getter() for key, getter in self._fields.items()}
+        if updates.get("JIN_HOTKEY"):
+            try:
+                to_pynput(updates["JIN_HOTKEY"])
+            except ValueError as exc:
+                messagebox.showerror("Pengaturan", f"Tombol pintas tidak valid:\n{exc}", parent=self)
+                return
         try:
             settings.write_env(updates)
             settings.set_autostart(bool(self._autostart.get()))

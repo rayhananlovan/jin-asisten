@@ -8,7 +8,9 @@ from dotenv import load_dotenv
 FROZEN = getattr(sys, "frozen", False)
 # Bundled read-only files (assets) vs. writable user files (.env, data).
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
-APP_HOME = Path(sys.executable).resolve().parent / "userdata" if FROZEN else ROOT
+# JIN_HOME lets the .exe and the source checkout share one .env and one database.
+_DEFAULT_HOME = Path(sys.executable).resolve().parent / "userdata" if FROZEN else ROOT
+APP_HOME = Path(os.getenv("JIN_HOME", "").strip() or _DEFAULT_HOME).expanduser()
 APP_HOME.mkdir(parents=True, exist_ok=True)
 ENV_PATH = APP_HOME / ".env"
 if not ENV_PATH.exists() and (ROOT / ".env.example").exists():
@@ -42,7 +44,8 @@ WAKE_WORDS = [
     if part.strip()
 ] or ["jin", "asghard"]
 # Legacy; wake word replaces keyboard summon.
-HOTKEY = os.getenv("JIN_HOTKEY", "").strip()
+HOTKEY = os.getenv("JIN_HOTKEY", "ctrl+alt+j").strip()
+JIN_CONFIRM = os.getenv("JIN_CONFIRM", "1").strip() != "0"
 PROJECTS_DIR = Path(
     os.getenv("JIN_PROJECTS_DIR", "").strip() or str(Path.home() / "Documents" / "JinProjects")
 ).expanduser()

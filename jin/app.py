@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import re
 import threading
-import traceback
 from datetime import datetime
-from tkinter import messagebox
 
 import customtkinter as ctk
 from PIL import Image
 
-from jin import db, settings
+from jin import db, dialogs, health, settings
 from jin.actions import windows_toast
 from jin.config import (
+    HOTKEY,
     JIN_CLIPBOARD,
+    JIN_CONFIRM,
     JIN_IMAGE,
     JIN_SPEAK,
     JIN_TRAY,
@@ -20,8 +20,12 @@ from jin.config import (
     MOOD_IMAGES,
     OWNER_CALL,
 )
+from jin.history_ui import HistoryWindow
+from jin.hotkey import GlobalHotkey
 from jin.llm import reply
+from jin.logs import log
 from jin.magic import current_form, cycle_form, looks_like_code, new_clipboard_text
+from jin.mini import MiniWindow
 from jin.smart import code_shadow, save_context, start_window_watcher
 from jin.recorder import MicRecorder
 from jin.settings_ui import SettingsWindow
@@ -47,8 +51,7 @@ class JinApp(ctk.CTk):
     def __init__(self, start_minimized: bool = False) -> None:
         super().__init__()
         self.title("JIN ASGHARD - v1.0")
-        self.geometry("540x860")
-        self.minsize(500, 780)
+        self._fit_to_screen()
         self.configure(fg_color=BG)
 
         ctk.set_appearance_mode("dark")
@@ -75,21 +78,39 @@ class JinApp(ctk.CTk):
         self._tray: JinTray | None = None
         self._tray_hint_shown = False
         self._settings_win: SettingsWindow | None = None
+        self._history_win: HistoryWindow | None = None
         self._stream_text = ""
         self._stream_queued = False
+        self.confirm_enabled = JIN_CONFIRM
+        self._hotkey: GlobalHotkey | None = None
+        self._mini: MiniWindow | None = None
+        self.mini_mode = False
+        self.report_callback_exception = self._on_tk_error
 
         self._build()
         self._boot()
         self._start_wake()
         self._start_tray()
+        self._start_hotkey(HOTKEY)
         start_window_watcher()
         self.after(4000, self._poll_reminders)
         self.after(400, self._idle_float)
         self.after(60_000, self._guardian)
         self.after(2500, self._poll_clipboard)
+        self.after(3500, self._run_health_check)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         if start_minimized and self._tray is not None:
             self.withdraw()
+        elif db.get_setting("mini_mode") == "1":
+            self.after(300, self.enter_mini)
+
+    def _fit_to_screen(self) -> None:
+        """860 logical px is taller than a 1080p screen at 125% scaling; shrink to fit."""
+        scale = ctk.ScalingTracker.get_window_scaling(self)
+        screen_height = int(self.winfo_screenheight() / scale)
+        height = max(600, min(860, screen_height - 110))
+        self.geometry(f"540x{height}+40+20")
+        self.minsize(500, min(780, height))
 
     def _build(self) -> None:
         self.shell = ctk.CTkFrame(self, fg_color=BG, border_color=BORDER, border_width=2, corner_radius=18)
@@ -125,19 +146,20 @@ class JinApp(ctk.CTk):
         if self.speak_enabled:
             self.speak_switch.select()
 
-        ctk.CTkButton(
-            title,
-            text="⚙",
-            width=32,
-            height=28,
-            fg_color=BG,
-            hover_color="#0a2a14",
-            border_color=DIM,
-            border_width=1,
-            text_color=GREEN,
-            font=ctk.CTkFont(size=14),
-            command=self.open_settings,
-        ).pack(side="right", padx=(0, 4))
+        for text, command in (("⚙", self.open_settings), ("☰", self.open_history), ("▭", self.enter_mini)):
+            ctk.CTkButton(
+                title,
+                text=text,
+                width=32,
+                height=28,
+                fg_color=BG,
+                hover_color="#0a2a14",
+                border_color=DIM,
+                border_width=1,
+                text_color=GREEN,
+                font=ctk.CTkFont(size=14),
+                command=command,
+            ).pack(side="right", padx=(0, 4))
 
         bottom = ctk.CTkFrame(self.shell, fg_color=PANEL, border_color=GREEN, border_width=2, corner_radius=10)
         bottom.pack(side="bottom", fill="x", padx=18, pady=(0, 14))
@@ -351,7 +373,13 @@ class JinApp(ctk.CTk):
         finally:
             self.after(0, lambda: self._set_mood("idle"))
 
-    def _log(self, text: str) -> None:
+    def _log(self, text: str, persist: bool = True) -> None:
+        if not persist:
+            pass
+        elif text.startswith(("[WARN]", "[ERROR]")):
+            log.warning(text)
+        else:
+            log.info(text)
         self.log.configure(state="normal")
         self.log.insert("end", text + "\n")
         self.log.see("end")
@@ -390,11 +418,15 @@ class JinApp(ctk.CTk):
         self._handle_user_text(text)
 
     def summon(self, command: str = "") -> None:
-        self.deiconify()
-        self.lift()
-        self.focus_force()
-        self.attributes("-topmost", True)
-        self.after(500, lambda: self.attributes("-topmost", False))
+        if self.mini_mode and self._mini is not None:
+            self._mini.deiconify()
+            self._mini.lift()
+        else:
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+            self.attributes("-topmost", True)
+            self.after(500, lambda: self.attributes("-topmost", False))
         self._log("[SPELL] asghard summoned")
         if self._wake is not None:
             self._wake.nudge_cooldown(2.5)
@@ -426,8 +458,9 @@ class JinApp(ctk.CTk):
         if not self.recorder.recording:
             try:
                 self.recorder.start()
-            except Exception as exc:
-                messagebox.showerror("Mic", f"Mic tidak bisa dipakai:\n{exc}")
+            except Exception:
+                log.exception("Mic gagal dibuka")
+                self._fail("Mic tidak bisa dipakai, bos. Cek apakah mic tercolok dan diizinkan di Windows.")
                 return
             self.mic_button.configure(text="STOP", fg_color="#3a1010", border_color="#ff5f56", text_color="#ff5f56")
             self._set_status("JIN: LISTENING...")
@@ -447,8 +480,9 @@ class JinApp(ctk.CTk):
         try:
             path = self.recorder.stop()
             text = self._clean_heard(transcribe(path))
-        except Exception as exc:
-            self.after(0, lambda: self._fail(str(exc)))
+        except Exception:
+            log.exception("Transkripsi gagal")
+            self.after(0, lambda: self._fail("Suaranya gagal kuubah jadi teks, bos. Coba lagi."))
             return
         if not text:
             self.after(0, lambda: self._fail("Suara tidak ketangkap. Coba lagi."))
@@ -482,11 +516,27 @@ class JinApp(ctk.CTk):
                 if name in {"set_form", "mantra"}:
                     self.after(0, self._apply_form_shell)
 
-            text = reply(history, on_tool=on_tool, on_token=self._on_token)
+            text = reply(
+                history,
+                on_tool=on_tool,
+                on_token=self._on_token,
+                confirm=self._confirm if self.confirm_enabled else None,
+            )
             db.add_message(self.conversation_id, "assistant", text)
+        except RuntimeError as exc:
+            # Raised on purpose with a readable message (e.g. Ollama not running).
+            log.warning("Reply gagal: %s", exc)
+            message = str(exc)
+            self.after(0, lambda: self._fail(message))
+            return
         except Exception:
-            error = traceback.format_exc()
-            self.after(0, lambda: self._fail(error))
+            log.exception("Reply gagal")
+            self.after(
+                0,
+                lambda: self._fail(
+                    f"Ada yang gagal waktu menjalankan perintah itu, {OWNER_CALL}. Detailnya kucatat di log."
+                ),
+            )
             return
 
         def show() -> None:
@@ -526,11 +576,67 @@ class JinApp(ctk.CTk):
             self.after(0, lambda: self._lock(False))
 
     def _fail(self, message: str) -> None:
+        """Show a readable error in the bubble; full details live in the log file."""
         self._lock(False)
         self.mic_button.configure(text="MIC", fg_color=BG, border_color=GREEN, text_color=GREEN)
         self._set_status("JIN: ERROR")
         self._log(f"[ERROR] {message.splitlines()[0]}")
-        messagebox.showerror("Jin Asghard", message)
+        self.bubble.configure(text=message)
+
+    def _on_tk_error(self, exc_type, exc, tb) -> None:
+        log.error("Error di UI", exc_info=(exc_type, exc, tb))
+        self._fail(f"Ada yang macet di tampilan, {OWNER_CALL}. Detailnya kucatat di log.")
+
+    def _confirm(self, question: str) -> bool:
+        """Called from the worker thread; blocks until the user answers on the Tk thread."""
+        answered = threading.Event()
+        result = {"ok": False}
+
+        def ask() -> None:
+            try:
+                self._set_status("JIN: MINTA IZIN...")
+                result["ok"] = dialogs.ask(self, question)
+            finally:
+                self._set_status("JIN: THINKING...")
+                answered.set()
+
+        self.after(0, ask)
+        answered.wait()
+        self.after(0, lambda: self._log(f"[IZIN] {'lanjut' if result['ok'] else 'dibatalkan'}"))
+        return result["ok"]
+
+    def _run_health_check(self) -> None:
+        def work() -> None:
+            try:
+                checks = health.run_checks()
+            except Exception:
+                log.exception("Cek kesehatan gagal")
+                return
+            self.after(0, lambda: self._show_health(checks))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_health(self, checks: list) -> None:
+        bad = health.problems(checks)
+        for check in checks:
+            if check.status != health.OK:
+                self._log(f"[CEK] {check.name}: {check.detail}")
+        if not bad:
+            self._log("[CEK] semua sistem siap")
+            return
+        names = ", ".join(check.name for check in bad)
+        message = f"{len(bad)} hal perlu dicek: {names}. Bilang 'cek sistem' untuk detail."
+        if not self.busy:
+            self.bubble.configure(text=message)
+        self._toast(message)
+
+    def _toast(self, body: str, important: bool = False) -> None:
+        """In mini mode the bubble already sits where Windows toasts appear, so show it there instead."""
+        if self.mini_mode and not important:
+            if not self.busy:
+                self.bubble.configure(text=body)
+            return
+        windows_toast("Jin Asghard", body)
 
     def _poll_reminders(self) -> None:
         try:
@@ -547,7 +653,7 @@ class JinApp(ctk.CTk):
         self.bubble.configure(text=f"PENGINGAT: {text}")
         self._set_status("JIN: REMINDER")
         self._set_mood("speak")
-        windows_toast("Jin Asghard", f"{OWNER_CALL}, {text}")
+        self._toast(f"{OWNER_CALL}, {text}", important=True)
         if self.speak_enabled:
             threading.Thread(target=self._speak_reminder, args=(text,), daemon=True).start()
         else:
@@ -581,7 +687,7 @@ class JinApp(ctk.CTk):
             self._guard_count += 1
             message = f"{OWNER_CALL}, sudah {self._guard_count * 2} jam di laptop. Istirahat sebentar."
             self._log(f"[GUARD] {message}")
-            windows_toast("Jin Asghard", message)
+            self._toast(message)
             if self.speak_enabled and not self.busy:
                 threading.Thread(target=self._speak_reminder, args=(message,), daemon=True).start()
         shadow = code_shadow()
@@ -589,7 +695,7 @@ class JinApp(ctk.CTk):
             self._pending = "istirahat"
             self._log(f"[SHADOW] {shadow}")
             self.bubble.configure(text=shadow)
-            windows_toast("Jin Asghard", shadow)
+            self._toast(shadow)
             if self.speak_enabled:
                 threading.Thread(target=self._speak_reminder, args=(shadow,), daemon=True).start()
         now = datetime.now()
@@ -656,9 +762,9 @@ class JinApp(ctk.CTk):
         self._pending = "clipboard"
         preview = text.replace("\n", " ")[:80]
         message = f"Bos copy teks: {preview}. Ringkas, terjemah, atau catat?"
-        self._log(f"[CLIP] {preview}")
+        self._log(f"[CLIP] {preview}", persist=False)
         self.bubble.configure(text=message)
-        windows_toast("Jin Asghard", "Teks tersalin. Ringkas, terjemah, atau catat?")
+        self._toast("Teks tersalin. Ringkas, terjemah, atau catat?")
         if self.speak_enabled:
             threading.Thread(
                 target=self._speak_reminder,
@@ -676,6 +782,8 @@ class JinApp(ctk.CTk):
             self._tray = JinTray(
                 on_show=lambda: self.after(0, self.show_window),
                 on_mic=lambda: self.after(0, self.summon),
+                on_mini=lambda: self.after(0, self.enter_mini),
+                on_history=lambda: self.after(0, self.open_history),
                 on_settings=lambda: self.after(0, self.open_settings),
                 on_quit=lambda: self.after(0, self.quit_app),
             )
@@ -684,10 +792,42 @@ class JinApp(ctk.CTk):
             self._tray = None
             self._log(f"[WARN] tray gagal: {exc}")
 
+    def _start_hotkey(self, combo: str) -> None:
+        if self._hotkey is not None:
+            self._hotkey.stop()
+            self._hotkey = None
+        if not combo.strip():
+            return
+        try:
+            self._hotkey = GlobalHotkey(combo, lambda: self.after(0, self.summon))
+            self._hotkey.start()
+            self._log(f"[BIND] tombol pintas: {combo}")
+        except Exception as exc:
+            self._log(f"[WARN] tombol pintas '{combo}' gagal: {exc}")
+
     def show_window(self) -> None:
+        if self.mini_mode:
+            self.exit_mini()
+            return
         self.deiconify()
         self.lift()
         self.focus_force()
+
+    def enter_mini(self) -> None:
+        if self._mini is None or not self._mini.winfo_exists():
+            self._mini = MiniWindow(self)
+        self.mini_mode = True
+        db.set_setting("mini_mode", "1")
+        self.withdraw()
+        self._mini.deiconify()
+        self._mini.lift()
+
+    def exit_mini(self) -> None:
+        self.mini_mode = False
+        db.set_setting("mini_mode", "0")
+        if self._mini is not None and self._mini.winfo_exists():
+            self._mini.withdraw()
+        self.show_window()
 
     def open_settings(self) -> None:
         self.show_window()
@@ -696,9 +836,19 @@ class JinApp(ctk.CTk):
             return
         self._settings_win = SettingsWindow(self, on_applied=self._apply_settings)
 
+    def open_history(self) -> None:
+        self.show_window()
+        if self._history_win is not None and self._history_win.winfo_exists():
+            self._history_win.focus_force()
+            self._history_win.refresh()
+            return
+        self._history_win = HistoryWindow(self)
+
     def _apply_settings(self, values: dict[str, str]) -> None:
         self.clipboard_enabled = values.get("JIN_CLIPBOARD", "1") != "0"
         self.close_to_tray = values.get("JIN_TRAY", "1") != "0"
+        self.confirm_enabled = values.get("JIN_CONFIRM", "1") != "0"
+        self._start_hotkey(values.get("JIN_HOTKEY", ""))
         self._log("[SPELL] pengaturan disimpan")
 
     def _on_close(self) -> None:
@@ -716,6 +866,8 @@ class JinApp(ctk.CTk):
                 self._wake.stop()
             except Exception:
                 pass
+        if self._hotkey is not None:
+            self._hotkey.stop()
         if self._tray is not None:
             self._tray.stop()
         self.destroy()

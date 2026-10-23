@@ -117,6 +117,20 @@ def recent_messages(conversation_id: int, limit: int = 24) -> list[dict[str, str
     return items
 
 
+def search_messages(query: str = "", limit: int = 300) -> list[dict]:
+    """Newest first. Empty query returns the latest messages."""
+    sql = "SELECT id, conversation_id, role, content, created_at FROM messages"
+    params: list = []
+    if query.strip():
+        sql += " WHERE content LIKE ?"
+        params.append(f"%{query.strip()}%")
+    sql += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    with _connect() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(row) for row in rows]
+
+
 def save_note(content: str, title: str = "") -> dict:
     now = datetime.now().isoformat(timespec="seconds")
     title = title.strip() or content.strip()[:40]

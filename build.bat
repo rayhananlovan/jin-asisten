@@ -13,6 +13,13 @@ pip install -q -r requirements.txt pyinstaller
 if not exist build mkdir build
 python -c "from PIL import Image; Image.open('assets/jin.png').save('build/jin.ico', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])"
 
+tasklist /FI "IMAGENAME eq JinAsghard.exe" | find /I "JinAsghard.exe" >nul
+if not errorlevel 1 (
+  echo Menutup Jin yang sedang jalan supaya file exe bisa diganti ...
+  taskkill /IM JinAsghard.exe /F >nul
+  timeout /t 2 /nobreak >nul
+)
+
 echo Membangun dist\JinAsghard\JinAsghard.exe ...
 python -m PyInstaller jin.spec --noconfirm --clean
 if errorlevel 1 (

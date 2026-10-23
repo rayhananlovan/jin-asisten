@@ -361,6 +361,25 @@ def _execute(name: str, args: dict) -> str:
             str(args.get("message") or ""),
             str(args.get("remote") or "origin"),
         )
+    if name == "git_pull":
+        return codehelp.git_pull(
+            str(args.get("path") or args.get("hint") or ""),
+            str(args.get("remote") or "origin"),
+        )
+    if name == "git_status":
+        return codehelp.git_status(str(args.get("path") or args.get("hint") or ""))
+    if name == "check_system":
+        from jin.health import check_system
+
+        return check_system()
+    if name == "export_notes":
+        from jin.archive import export_notes
+
+        return export_notes()
+    if name == "export_chats":
+        from jin.archive import export_chats
+
+        return export_chats(str(args.get("query") or ""))
     return f"Tool tidak dikenal: {name}"
 
 
@@ -396,6 +415,40 @@ def match_intent(text: str) -> tuple[str, dict] | None:
         return "resume_coding", {"hint": hint, "install_deps": True, "open_terminal": True}
     if re.match(r"^(?:daftar|lihat|tampilkan)\s+project(?:s)?$", lower):
         return "list_projects", {}
+    pull = re.match(
+        r"^(?:tolong\s+)?(?:git\s+pull|pull|tarik)"
+        r"(?:\s+(?:yang\s+)?(?:terbaru|update(?:an)?|perubahan(?:\s+terbaru)?|kode\s+terbaru|dari\s+(?:remote|github|origin)))*"
+        r"(?:\s+(?:di|di\s+project|di\s+proyek|di\s+projek)\s+(.+))?$",
+        raw,
+        re.I,
+    ) or re.match(
+        r"^(?:tolong\s+)?(?:update|perbarui)\s+(?:repo|kode|project|proyek|projek)"
+        r"(?:\s+(?:dari\s+(?:remote|github|origin)))?(?:\s+(?:di\s+)?(.+))?$",
+        raw,
+        re.I,
+    )
+    if pull:
+        return "git_pull", {"path": (pull.group(1) or "").strip(), "remote": "origin"}
+    status = re.match(
+        r"^(?:tolong\s+)?(?:git\s+status|status\s+(?:git|repo)|cek\s+(?:git|repo|status\s+git))"
+        r"(?:\s+(?:di|di\s+project|di\s+proyek|di\s+projek)\s+(.+))?$",
+        raw,
+        re.I,
+    )
+    if status:
+        return "git_status", {"path": (status.group(1) or "").strip()}
+    if re.match(r"^(?:cek|periksa|diagnosa)\s+(?:sistem|kesehatan|jin)(?:\s+jin)?$|^diagnosa$", lower):
+        return "check_system", {}
+    if re.match(r"^(?:ekspor|export|simpan)\s+(?:semua\s+)?catatan(?:\s+ke\s+(?:markdown|md|file))?$", lower):
+        return "export_notes", {}
+    export_chat = re.match(
+        r"^(?:ekspor|export|simpan)\s+(?:riwayat\s+)?(?:obrolan|chat|percakapan)"
+        r"(?:\s+(?:soal|tentang)\s+(.+?))?(?:\s+ke\s+(?:markdown|md|file))?$",
+        raw,
+        re.I,
+    )
+    if export_chat:
+        return "export_chats", {"query": (export_chat.group(1) or "").strip()}
     # git commit / push
     if re.match(
         r"^(?:tolong\s+)?(?:commit(?:\s+dan\s+push)?|git\s+commit(?:\s+and\s+push)?|commitkan|push(?:\s+ke\s+remote)?)\b",
@@ -673,8 +726,20 @@ def match_intents(text: str) -> list[tuple[str, dict]]:
     found: list[tuple[str, dict]] = []
     for part in parts:
         one = match_intent(part)
-        if one:
-            found.append(one)
+        if not one:
+            continue
+        # "commit dan push" splits on "dan"; run it as one action with one confirmation.
+        if one[0] == "git_push" and found and found[-1][0] == "git_commit":
+            commit_args = found.pop()[1]
+            one = (
+                "git_commit_and_push",
+                {
+                    "path": commit_args.get("path") or one[1].get("path") or "",
+                    "message": commit_args.get("message") or "",
+                    "remote": one[1].get("remote") or "origin",
+                },
+            )
+        found.append(one)
     if not found:
         one = match_intent(cleaned) or match_intent(text)
         if one:
@@ -1119,7 +1184,86 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_pull",
+            "description": (
+                "Tarik update terbaru dari remote (fast-forward saja). path kosong = project terakhir. "
+                "Pakai untuk 'pull', 'pull yang terbaru', 'update repo'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}, "remote": {"type": "string"}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_status",
+            "description": "Lihat branch, file berubah, dan commit terakhir di repo project.",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_system",
+            "description": "Cek kesehatan Jin: Ollama, model, mic, OCR, suara, editor, dan sisa disk.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_notes",
+            "description": "Ekspor semua catatan ke file Markdown di Documents\\Jin.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_chats",
+            "description": "Ekspor riwayat obrolan ke Markdown. query opsional untuk menyaring isi.",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+        },
+    },
 ]
+
+
+def confirmation_question(name: str, args: dict) -> str | None:
+    """Question to ask before a risky action, or None if it can run straight away.
+
+    Fills in auto-generated details (like the commit message) into args so the
+    action later runs exactly what was confirmed.
+    """
+    if name in {"git_commit", "git_commit_and_push", "git_push"}:
+        repo = codehelp._resolve_repo(str(args.get("path") or args.get("hint") or ""))
+        if repo is None:
+            return None
+        _code, branch = codehelp._run_git(repo, ["rev-parse", "--abbrev-ref", "HEAD"])
+        remote = str(args.get("remote") or "origin")
+        if name == "git_push":
+            return f"Push {repo.name} ke {remote}/{branch}?"
+        _code, status = codehelp._run_git(repo, ["status", "--short"])
+        if not (status or "").strip():
+            return None
+        if not str(args.get("message") or "").strip():
+            args["message"] = codehelp._make_commit_message(repo)
+        files = len([line for line in status.splitlines() if line.strip()])
+        question = f"Commit {files} file di {repo.name} dengan pesan:\n\n{args['message']}"
+        if name == "git_commit_and_push":
+            question += f"\n\nLalu push ke {remote}/{branch}."
+        return question
+    if name == "install_library":
+        packages = str(args.get("packages") or args.get("package") or "").strip()
+        where = str(args.get("path") or "").strip() or "project terakhir"
+        return f"Install {packages} di {where}?"
+    if name == "lock_pc" or (name == "mantra" and str(args.get("name") or "").lower() == "pulang"):
+        return "Kunci laptop sekarang?"
+    return None
 
 
 def describe_call(name: str, args: dict) -> str:

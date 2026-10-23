@@ -4,7 +4,7 @@ import json
 import urllib.error
 import urllib.request
 
-from jin.actions import TOOLS, describe_call, execute, match_intents
+from jin.actions import TOOLS, confirmation_question, describe_call, execute, match_intents
 from jin.config import OLLAMA_MODEL, OLLAMA_URL
 from jin import memory as jin_memory
 from jin.magic import current_form
@@ -74,7 +74,20 @@ def _arguments(call: dict) -> dict:
     return raw if isinstance(raw, dict) else {}
 
 
-def _with_tools(messages: list[dict], on_tool=None, on_token=None) -> str:
+CANCELLED = "Dibatalkan oleh bos Rehan. Aksi tidak dijalankan."
+
+
+def _run_tool(name: str, args: dict, on_tool=None, confirm=None) -> str:
+    if confirm is not None:
+        question = confirmation_question(name, args)
+        if question and not confirm(question):
+            return CANCELLED
+    if on_tool:
+        on_tool(name, args)
+    return execute(name, args)
+
+
+def _with_tools(messages: list[dict], on_tool=None, on_token=None, confirm=None) -> str:
     current = list(messages)
     for _ in range(6):
         message = _chat(current, use_tools=True, on_token=on_token)
@@ -85,16 +98,16 @@ def _with_tools(messages: list[dict], on_tool=None, on_token=None) -> str:
         current.append(message)
         for call in tool_calls:
             name = (call.get("function") or {}).get("name") or ""
-            args = _arguments(call)
-            if on_tool:
-                on_tool(name, args)
-            result = execute(name, args)
+            result = _run_tool(name, _arguments(call), on_tool, confirm)
             current.append({"role": "tool", "content": result})
     return text or "Aksi sudah dijalankan."
 
 
-def reply(history: list[dict[str, str]], on_tool=None, on_token=None) -> str:
-    """on_token receives the full text-so-far each time a new piece streams in."""
+def reply(history: list[dict[str, str]], on_tool=None, on_token=None, confirm=None) -> str:
+    """on_token receives the full text-so-far each time a new piece streams in.
+
+    confirm(question) -> bool is asked before risky actions; None skips confirmation.
+    """
     history = [dict(item) for item in history]
     last_index = next(
         (index for index in range(len(history) - 1, -1, -1) if history[index].get("role") == "user"),
@@ -132,9 +145,8 @@ def reply(history: list[dict[str, str]], on_tool=None, on_token=None) -> str:
     if intents:
         results = []
         for name, args in intents:
-            if on_tool:
-                on_tool(name, args)
-            results.append(f"{describe_call(name, args)}\n{execute(name, args)}")
+            result = _run_tool(name, args, on_tool, confirm)
+            results.append(f"{describe_call(name, args)}\n{result}")
         joined = "\n\n".join(results)
         messages.append(
             {
@@ -149,6 +161,6 @@ def reply(history: list[dict[str, str]], on_tool=None, on_token=None) -> str:
         message = _chat(messages, use_tools=False, on_token=on_token)
         return (message.get("content") or joined).strip()
     return (
-        _with_tools(messages, on_tool=on_tool, on_token=on_token).strip()
+        _with_tools(messages, on_tool=on_tool, on_token=on_token, confirm=confirm).strip()
         or "Aku belum bisa menjawab itu, bos Rehan."
     )

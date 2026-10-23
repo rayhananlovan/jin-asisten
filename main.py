@@ -8,6 +8,14 @@ if sys.stdout is None or sys.stderr is None:
     sys.stderr = sys.stderr or _devnull
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
+# winrt ships an old msvcp140.dll (14.29); if it loads first, ctranslate2 (Whisper)
+# crashes with an access violation. Loading ctranslate2 first pins the system copy.
+import ctranslate2  # noqa: E402, F401
+
+from jin import logs  # noqa: E402
+
+logs.setup()
+
 from jin.app import JinApp  # noqa: E402
 
 
