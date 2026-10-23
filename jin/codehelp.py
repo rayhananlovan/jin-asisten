@@ -834,6 +834,61 @@ def git_push(path: str = "", remote: str = "origin", set_upstream: bool = True) 
     return f"Push berhasil: {rem}/{branch}\n{out or '(ok)'}"
 
 
+def git_status(path: str = "") -> str:
+    repo = _resolve_repo(path)
+    if repo is None:
+        return "Bukan repo git / project belum ketemu."
+    remember_project(repo)
+    return f"Repo: {repo}\n{git_snapshot(repo)}"
+
+
+def git_pull(path: str = "", remote: str = "origin") -> str:
+    """Fast-forward only, so a pull never creates merge commits or conflicts."""
+    repo = _resolve_repo(path)
+    if repo is None:
+        return "Bukan repo git / project belum ketemu."
+    code, branch = _run_git(repo, ["rev-parse", "--abbrev-ref", "HEAD"])
+    if code != 0 or not branch or branch == "HEAD":
+        return "Branch tidak ketahuan. Checkout branch dulu."
+    rem = (remote or "origin").strip() or "origin"
+    code, remotes = _run_git(repo, ["remote"])
+    if rem not in (remotes or "").splitlines():
+        return f"Remote `{rem}` belum ada di {repo.name}. Remotes: {remotes or '(kosong)'}"
+
+    _code, before = _run_git(repo, ["rev-parse", "--short", "HEAD"])
+    code, out = _run_git(repo, ["pull", "--ff-only", rem, branch], timeout=180)
+    remember_project(repo)
+    if code != 0:
+        low = out.lower()
+        if "would be overwritten" in low or "local changes" in low:
+            reason = "Ada perubahan lokal yang bentrok dengan update. Commit atau stash dulu."
+        elif "not possible to fast-forward" in low or "diverging" in low or "divergent" in low:
+            reason = "Branch lokal dan remote sudah bercabang. Perlu merge/rebase manual."
+        elif "could not read" in low or "authentication" in low or "permission denied" in low:
+            reason = "Gagal login ke remote. Cek akses git."
+        elif "couldn't find remote ref" in low:
+            reason = f"Branch `{branch}` belum ada di {rem}."
+        else:
+            reason = "Pull gagal."
+        return f"{reason}\n\n{out[-800:]}"
+
+    _code, after = _run_git(repo, ["rev-parse", "--short", "HEAD"])
+    if before == after:
+        return f"{repo.name} ({branch}) sudah paling baru. Tidak ada update dari {rem}."
+    _code, log = _run_git(repo, ["log", "--pretty=format:%h %s", f"{before}..{after}"])
+    _code, stat = _run_git(repo, ["diff", "--shortstat", before, after])
+    commits = [line for line in (log or "").splitlines() if line.strip()]
+    lines = [
+        f"Pull berhasil di {repo.name} ({branch}): {len(commits)} commit baru.",
+        (stat or "").strip(),
+        "Commit baru:",
+        *[f"- {line}" for line in commits[:10]],
+    ]
+    if len(commits) > 10:
+        lines.append(f"- ...dan {len(commits) - 10} lagi")
+    return "\n".join(line for line in lines if line)
+
+
 def git_commit_and_push(
     path: str = "",
     message: str = "",

@@ -9,12 +9,24 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/python-3.10+-3776AB?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/ollama-local-111111" alt="Ollama">
   <img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Windows">
 </p>
 
 Jin Asghard adalah aplikasi desktop bertema terminal hijau. Karakter jin di tengah jendela berubah saat mendengar, berpikir, dan berbicara. Model bahasa, memori, dan pengenalan suara semuanya lokal. Satu kalimat bisa berisi beberapa perintah, dan Jin menjalankannya berurutan.
+
+## Daftar isi
+
+- [Kemampuan](#kemampuan)
+- [Tombol dan pintasan](#tombol-dan-pintasan)
+- [Stack](#stack)
+- [Menjalankan](#menjalankan)
+- [Contoh perintah](#contoh-perintah)
+- [Konfigurasi](#konfigurasi)
+- [Kalau ada masalah](#kalau-ada-masalah)
+- [Struktur project](#struktur-project)
+- [Privasi](#privasi)
 
 ## Kemampuan
 
@@ -22,7 +34,7 @@ Jin Asghard adalah aplikasi desktop bertema terminal hijau. Karakter jin di teng
 
 - Ketik pesan lalu **KIRIM**, atau bicara lewat mikrofon.
 - Ucapkan **Jin** atau **Asghard** untuk memanggil jendela dan langsung mulai mendengar. Perintah bisa menyusul, misalnya `Jin buka vs code`.
-- Jawaban dibacakan dengan suara Indonesia kalau sakelar **SUARA** menyala.
+- Jawaban muncul bertahap di gelembung saat Jin masih mengetik, lalu dibacakan dengan suara Indonesia kalau sakelar **SUARA** menyala.
 - Notifikasi Windows muncul untuk pengingat, teks yang baru disalin, dan saran istirahat.
 
 ### Ingatan
@@ -35,7 +47,8 @@ Jin Asghard adalah aplikasi desktop bertema terminal hijau. Karakter jin di teng
 
 ### Layar, file, dan clipboard
 
-- `baca layar` menjepret layar lalu membaca teksnya dengan Windows OCR.
+- `baca layar` menjepret jendela yang sedang dipakai (bukan jendela Jin) lalu membaca teksnya dengan Windows OCR.
+- `jelaskan layar` atau `kenapa error ini` membiarkan model vision lokal melihat jendela itu dan menjelaskan isinya, termasuk arti pesan error. Kalau model vision belum terpasang, Jin kembali ke OCR.
 - `screenshot` menyimpan gambar layar.
 - Mencari file di Desktop, Documents, Downloads, dan folder project, lalu membaca teks, PDF, dan Word.
 - `ringkas` merangkum PDF, Word, atau halaman yang sedang dibuka.
@@ -58,7 +71,16 @@ Jin Asghard adalah aplikasi desktop bertema terminal hijau. Karakter jin di teng
 - Mengingat jejak project dan menampilkannya lewat `daftar project`.
 - Memasang library dengan pip, npm, yarn, atau pnpm.
 - `draft commit` meringkas diff menjadi pesan commit. `commit` memakai pesan itu, `commit pesan: ...` memakai pesan sendiri, dan `commit dan push` mengirimnya ke remote.
+- `status git` menampilkan branch dan file yang berubah. `pull` atau `update repo` menarik perubahan terbaru tanpa merge paksa; kalau bentrok, Jin menjelaskan sebabnya.
 - Saat commit, file sensitif seperti `.env` dan kunci privat dikeluarkan dari staging.
+- Sebelum commit, push, install library, atau kunci laptop, Jin menampilkan jendela izin. Untuk commit, jendela itu memperlihatkan jumlah file dan pesan commit yang akan dipakai.
+
+### Riwayat dan kesehatan
+
+- Tombol **☰** membuka riwayat obrolan dan catatan, lengkap dengan pencarian dan ekspor ke Markdown.
+- `ekspor catatan` dan `ekspor obrolan soal ...` menyimpan file Markdown ke `Documents\Jin`.
+- Saat menyala, Jin memeriksa Ollama, model, mic, OCR, suara, editor, dan sisa disk. `cek sistem` menampilkan laporan lengkapnya.
+- Kesalahan ditampilkan dengan bahasa biasa. Detail teknisnya dicatat di `data\logs\jin.log`.
 
 ### Wujud dan gerakan di karakter
 
@@ -77,6 +99,16 @@ Tiga mantra singkat:
 - `lanjut` atau `kerja` — wujud serius, lalu lanjutkan sesi coding.
 - `pulang` — pamit, lalu mengunci laptop.
 
+## Tombol dan pintasan
+
+| Tombol | Fungsi |
+| --- | --- |
+| **Ctrl+Alt+J** | Memanggil Jin dan menyalakan mic dari aplikasi mana pun. Bisa diganti di Pengaturan |
+| **⚙** | Pengaturan: nama, model, suara, kata panggil, tombol pintas, folder project, pantau clipboard, minta izin, sembunyi ke tray, dan jalan otomatis saat Windows menyala. Ada juga tombol untuk membuka folder data dan file log |
+| **☰** | Riwayat obrolan dan catatan, dengan pencarian dan ekspor ke Markdown |
+| **▭** | Mode mini: gelembung kecil di pojok kanan bawah. Klik wajah atau **MIC** untuk bicara, klik **⤢** atau double-click untuk kembali |
+| Tombol tutup | Menyembunyikan Jin ke tray. Klik kanan ikon tray untuk **Keluar** |
+
 ## Stack
 
 | Bagian | Teknologi |
@@ -87,11 +119,14 @@ Tiga mantra singkat:
 | Dengar | Whisper `tiny` |
 | Bicara | edge-tts, suara Indonesia |
 | Baca layar | Windows OCR |
+| Pahami layar | Ollama `qwen2.5vl:3b` (opsional) |
+| Tray | pystray |
+| Paket `.exe` | PyInstaller + Inno Setup |
 
 ## Menjalankan
 
 1. Pasang [Ollama](https://ollama.com/download) dan pastikan `ollama` ada di PATH.
-2. Pasang Python 3.11 atau lebih baru.
+2. Pasang Python 3.10 atau lebih baru.
 3. Double-click `start.bat`.
 
 Pertama kali, skrip mengunduh model (sekitar 5–7 GB), membuat virtual environment, memasang dependensi, lalu membuka aplikasi.
@@ -108,6 +143,20 @@ copy .env.example .env
 python main.py
 ```
 
+Untuk `jelaskan layar`, pasang model vision sekali: `ollama pull qwen2.5vl:3b` (sekitar 3 GB).
+
+### Aplikasi `.exe`
+
+Double-click `build.bat` di folder project. Skrip itu menutup Jin yang sedang jalan, lalu membangun `dist\JinAsghard\JinAsghard.exe`. Kalau [Inno Setup 6](https://jrsoftware.org/isdl.php) terpasang, skrip itu sekalian membuat installer `dist\JinAsghard-Setup-1.0.0.exe`.
+
+### Lokasi data
+
+Secara bawaan, `python main.py` menyimpan data di folder project ini, sedangkan versi `.exe` memakai folder `userdata` di samping `JinAsghard.exe`. Installer menawarkan `D:\JinAsghard` kalau drive D ada.
+
+Supaya keduanya berbagi obrolan, catatan, dan pengaturan yang sama, isi variabel lingkungan `JIN_HOME`, misalnya `D:\JinData\jin`. Folder itu berisi `.env`, `data\jin.db`, dan `data\logs\jin.log`.
+
+Model Ollama dan Whisper ikut variabel `OLLAMA_MODELS` dan `HF_HOME`. Arahkan keduanya ke drive lain kalau C penuh.
+
 ## Contoh perintah
 
 ```text
@@ -115,6 +164,8 @@ Jin buka vs code
 radar
 ingat: proyek portofolio pakai React
 baca layar
+jelaskan layar
+kenapa error ini
 cari file catatan
 baca D:\folder\dokumen.pdf
 ringkas
@@ -129,6 +180,10 @@ daftar project
 install library requests
 draft commit
 commit dan push
+status git
+pull di jin-asisten
+cek sistem
+ekspor obrolan soal pajak
 ```
 
 ## Konfigurasi
@@ -138,6 +193,12 @@ Salin `.env.example` menjadi `.env`. File itu tidak ikut di-commit.
 | Variabel | Fungsi |
 | --- | --- |
 | `OLLAMA_MODEL` | Model chat lokal |
+| `JIN_VISION_MODEL` | Model vision untuk `jelaskan layar` |
+| `JIN_CLIPBOARD` | `0` mematikan tawaran saat menyalin teks |
+| `JIN_TRAY` | `0` membuat tombol tutup benar-benar keluar |
+| `JIN_CONFIRM` | `0` mematikan jendela izin sebelum aksi berisiko |
+| `JIN_HOTKEY` | Tombol pintas global, misalnya `ctrl+alt+j`. Kosong berarti mati |
+| `JIN_HOME` | Folder data bersama untuk `.env`, database, dan log |
 | `JIN_EMBED_MODEL` | Model memori semantik |
 | `WHISPER_MODEL` | Model pengenalan suara |
 | `OWNER_NAME` / `OWNER_CALL` | Nama dan sapaan pemilik |
@@ -145,6 +206,40 @@ Salin `.env.example` menjadi `.env`. File itu tidak ikut di-commit.
 | `JIN_WAKE_WORDS` | Kata pemanggil, dipisah koma |
 | `JIN_PROJECTS_DIR` | Folder project yang dipindai |
 
+## Kalau ada masalah
+
+Ketik `cek sistem` dulu. Jin memeriksa Ollama, model, mic, OCR, suara, editor, dan sisa disk, lalu menyebut bagian yang bermasalah.
+
+| Gejala | Penyebab dan solusi |
+| --- | --- |
+| Jin tidak menjawab | Ollama belum jalan, atau model belum diunduh. Jalankan `ollama pull qwen2.5:7b` |
+| `jelaskan layar` hanya membaca teks | Model vision belum terpasang. Jalankan `ollama pull qwen2.5vl:3b` |
+| Teks Indonesia di layar terbaca kacau | Windows OCR belum punya bahasa Indonesia. Tambahkan di Settings > Time & language > Language |
+| Suara terdengar seperti robot Windows | edge-tts butuh internet. Tanpa internet, Jin memakai suara bawaan Windows |
+| Build `.exe` gagal di tahap akhir | Jin lama masih terbuka. `build.bat` menutupnya sendiri; kalau masih gagal, keluar dari tray lalu ulangi |
+| Ingin tahu detail error | Buka Pengaturan > **BUKA LOG**, atau lihat `data\logs\jin.log` |
+
+## Struktur project
+
+```text
+main.py              titik masuk aplikasi
+jin/app.py           jendela utama dan alur obrolan
+jin/llm.py           percakapan dengan Ollama, streaming, dan pemanggilan tool
+jin/actions.py       pengenalan perintah dan eksekusi aksi
+jin/codehelp.py      VS Code, git, dan pemasangan library
+jin/magic.py         layar, OCR, vision, dan clipboard
+jin/health.py        cek sistem
+jin/archive.py       ekspor Markdown
+jin/mini.py          mode mini
+jin/history_ui.py    jendela riwayat
+jin/settings_ui.py   jendela pengaturan
+jin/tray.py          ikon tray
+jin/hotkey.py        tombol pintas global
+jin/logs.py          file log
+jin.spec             konfigurasi PyInstaller
+installer.iss        konfigurasi Inno Setup
+```
+
 ## Privasi
 
-Obrolan, catatan, dan embedding tersimpan di `data/jin.db` pada laptop. Folder `data/`, `.venv/`, dan `.env` diabaikan git.
+Semuanya berjalan di laptop. Obrolan, catatan, dan embedding tersimpan di `data/jin.db`. Isi clipboard tidak ditulis ke file log. Folder `data/`, `.venv/`, `build/`, `dist/`, dan `.env` diabaikan git, jadi tidak ikut ter-push. Koneksi internet hanya dipakai untuk suara edge-tts, cuaca di radar pagi, dan pencarian web saat diminta.

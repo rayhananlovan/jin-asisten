@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import base64
 import ctypes
+import ctypes.wintypes
+import io
+import json
 import re
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
 from PIL import ImageGrab
 
 from jin import db
-from jin.config import DATA_DIR, OWNER_CALL, ensure_dirs
+from jin.config import DATA_DIR, OLLAMA_URL, OWNER_CALL, VISION_MODEL, ensure_dirs
 
 FORMS = ("tenang", "nyentrik", "serius")
 HARI = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
@@ -24,19 +30,65 @@ def _key(vk: int) -> None:
     ctypes.windll.user32.keybd_event(vk, 0, 2, 0)
 
 
-def screenshot() -> Path:
+def _save_shot(image, to_desktop: bool) -> Path:
     ensure_dirs()
     folder = DATA_DIR / "screenshots"
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"layar-{datetime.now().strftime('%Y%m%d-%H%M%S')}.png"
-    image = ImageGrab.grab()
     image.save(path)
-    desktop = Path.home() / "Desktop" / path.name
+    if to_desktop:
+        desktop = Path.home() / "Desktop" / path.name
+        try:
+            image.save(desktop)
+            return desktop
+        except OSError:
+            pass
+    return path
+
+
+def screenshot() -> Path:
+    return _save_shot(ImageGrab.grab(all_screens=True), to_desktop=True)
+
+
+def _foreground_bbox() -> tuple[int, int, int, int] | None:
+    """Physical-pixel bounds of the foreground window, without the drop shadow."""
+    user32 = ctypes.windll.user32
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd or user32.IsIconic(hwnd):
+        return None
+    rect = ctypes.wintypes.RECT()
+    dwmwa_extended_frame_bounds = 9
+    result = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+        hwnd,
+        dwmwa_extended_frame_bounds,
+        ctypes.byref(rect),
+        ctypes.sizeof(rect),
+    )
+    if result != 0:
+        return None
+    if rect.right - rect.left < 80 or rect.bottom - rect.top < 80:
+        return None
+    return rect.left, rect.top, rect.right, rect.bottom
+
+
+def capture_work_window():
+    """Focus the window behind Jin, grab only that window, then return to Jin."""
+    from jin import smart
+
+    switched = False
     try:
-        image.save(desktop)
-        return desktop
-    except OSError:
-        return path
+        if smart.last_app_title():
+            _alt_tab()
+            switched = True
+        bbox = _foreground_bbox() if switched else None
+        image = ImageGrab.grab(bbox=bbox, all_screens=True)
+    finally:
+        if switched:
+            try:
+                _alt_tab()
+            except Exception:
+                pass
+    return image
 
 
 def _alt_tab() -> None:
@@ -74,30 +126,18 @@ def _ocr_image(image) -> tuple[str, str]:
 
 
 def read_screen() -> str:
-    """Grab the work window (not Jin), OCR it, then return focus to Jin."""
-    from PIL import Image
-
+    """OCR the work window (not Jin)."""
     from jin import smart
 
-    switched = False
     path: Path | None = None
     text = ""
     err = ""
     try:
-        if smart.last_app_title():
-            _alt_tab()
-            switched = True
-        path = screenshot()
-        image = Image.open(path)
+        image = capture_work_window()
+        path = _save_shot(image, to_desktop=False)
         text, err = _ocr_image(image)
     except Exception as exc:
         err = str(exc)
-    finally:
-        if switched:
-            try:
-                _alt_tab()
-            except Exception:
-                pass
 
     if path and text.strip():
         smart.save_context({"result": text[:280], "topic": "isi layar"})
@@ -109,6 +149,72 @@ def read_screen() -> str:
         f"Huruf di layar belum kebaca{hint}. "
         "Pasang `winocr` + Windows OCR (id/en), atau tempel teksnya ke clipboard lalu bilang 'ringkas'."
     )
+
+
+def _installed_models() -> list[str]:
+    try:
+        with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return []
+    return [str(item.get("name") or "") for item in data.get("models") or []]
+
+
+def _has_model(name: str) -> bool:
+    wanted = name if ":" in name else f"{name}:latest"
+    return any(model == wanted for model in _installed_models())
+
+
+def describe_screen(question: str = "") -> str:
+    """Let a local vision model look at the work window; fall back to OCR."""
+    from jin import smart
+
+    if not _has_model(VISION_MODEL):
+        return (
+            f"Model vision '{VISION_MODEL}' belum terpasang, jadi aku cuma bisa baca tulisannya.\n"
+            f"Pasang sekali lewat: ollama pull {VISION_MODEL}\n\n" + read_screen()
+        )
+    image = capture_work_window()
+    path = _save_shot(image, to_desktop=False)
+    small = image.convert("RGB")
+    small.thumbnail((1280, 1280))
+    buffer = io.BytesIO()
+    small.save(buffer, format="PNG")
+    prompt = (
+        "Kamu melihat screenshot jendela kerja di laptop. Jelaskan singkat dalam bahasa Indonesia "
+        "apa yang sedang terbuka dan apa isinya. Kalau ada pesan error, sebutkan errornya, "
+        "kemungkinan penyebab, dan cara memperbaikinya."
+    )
+    if question.strip():
+        prompt += f"\nPertanyaan bos: {question.strip()}"
+    payload = {
+        "model": VISION_MODEL,
+        "stream": False,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+                "images": [base64.b64encode(buffer.getvalue()).decode("ascii")],
+            }
+        ],
+        "options": {"temperature": 0.2},
+    }
+    request = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=300) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError) as exc:
+        return f"Model vision gagal dipanggil ({exc}).\n\n" + read_screen()
+    text = str((data.get("message") or {}).get("content") or "").strip()
+    if not text:
+        return "Model vision tidak memberi jawaban.\n\n" + read_screen()
+    smart.save_context({"result": text[:280], "topic": "isi layar"})
+    return f"Screenshot: {path}\nPenjelasan layar:\n{text[:4000]}"
 
 
 def clipboard_get() -> str:
